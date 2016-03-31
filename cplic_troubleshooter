@@ -1,0 +1,503 @@
+#!/usr/local/cpanel/3rdparty/bin/perl
+# SCRIPT: cplic_troubleshooter
+# PURPOSE: Run some tests to (hopefully) quickly determine what may be causing a cPanel
+#		license failure.  Taken from the steps outlined at: 
+# 		https://cpanel.wiki/display/LS/License+Troubleshooting
+# CREATED: 3/23/2016
+# AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
+# 
+
+BEGIN {
+   unshift @INC, '/usr/local/share/perl5';
+}
+
+use IO::Socket::INET;
+use Sys::Hostname;
+use Time::Local;
+use Term::ANSIColor qw(:constants);
+use DateTime;
+
+$Term::ANSIColor::AUTORESET = 1;
+$| = 1;
+
+system("clear");
+
+&module_sanity_check();
+
+our $EXTERNAL_IP_ADDRESS_80;
+our $EXTERNAL_LICENSED_IP_2089;
+our $HOSTNAME;
+our $HOSTNAME_IP;
+our $LOCAL_HOSTNAME_IP;
+our $REVERSED_IP;
+
+$EXTERNAL_IP_ADDRESS_80 = determine_ip(80);
+is_license_valid();
+is_hostname_fqdn();
+check_kernel_hostname();
+get_ip_of_hostname();
+get_reverse_of_ip();
+check_file_for_odd_chars("/etc/hosts");
+check_file_for_odd_chars("/etc/sysconfig/network");
+check_if_hostname_resolves_locally();
+check_for_license_error();
+get_hostname_at_install();
+check_nat();
+check_root_servers();
+get_date();
+get_hwaddr();
+check_auth_cpanel_resolution();
+check_etc_mtab_file();
+check_other_ports();
+check_perms_on_cpanel_lisc_file();
+is_file_immutable("/usr/local/cpanel/cpanel.lisc");
+read_last_50_lines_of_license_log();
+
+exit;
+
+sub determine_ip { 
+	$port=$_[0];
+	print_working("Obtaining the external IP address (port $port): ");
+	$EXTERNAL_IP_ADDRESS = get_external_ip($port);
+	print_OK($EXTERNAL_IP_ADDRESS) unless !( $EXTERNAL_IP_ADDRESS); 
+	return $EXTERNAL_IP_ADDRESS;
+}
+
+sub is_hostname_fqdn {
+	$HOSTNAME = hostname();
+	print_working("Verifying if hostname (" . $HOSTNAME . ") is a valid FQDN: ");
+	if ( $HOSTNAME !~ /([\w-]+)\.([\w-]+)\.(\w+)/ ) {
+		print_warn("Error - hostname ($HOSTNAME) is not a valid FQDN!");
+	}
+	else { 
+		print_OK("Valid!");
+	}
+}
+
+sub is_license_valid { 
+	print_working("Verifying if $EXTERNAL_IP_ADDRESS_80 is valid by checking https://verify.cpanel.net: ");
+	my $host = 'verify.cpanel.net';
+	my $helper_url = "http://" . $host;
+	my $url = '/index.cgi?ip=' . $EXTERNAL_IP_ADDRESS_80;
+	$helper_url .= $url;
+	my $sock = IO::Socket::INET->new(
+		PeerAddr => $host,
+		PeerPort => 80,
+		Proto    => 'tcp',
+		Timeout  => 5,
+	) or return;
+	local $SIG{'ALRM'} = sub { return (); };
+	alarm 5;
+	print $sock "GET ${url} HTTP/1.1\r\nHost: ${host}\r\n\r\n";
+	read $sock, my $buffer, 50_000;
+	alarm 0;
+	close $sock;
+	if ($buffer =~ m/active<br\/>/) { 
+		print_OK("Valid!");
+		return;
+	}
+	if ($buffer =~ m/expired on<br\/>/) { 
+		print_warn("Expired!");
+		return;
+	}
+}
+
+sub get_external_ip {
+    my ($port) = @_;
+    die "get_external_ip port number not specified" if !$port;
+    # myip.cpanel.net supports HTTP ports 80, 2089 and HTTPS port 443.
+    my $host = 'myip.cpanel.net';
+    my $path = '/v1.0/';
+    my $ip;
+    my $reply;
+    my $count = 0;
+    for ( 1 .. 2 ) {
+        local $SIG{'ALRM'} = sub {
+            $count++;
+            print_warn("External IP detection via ${host} port ${port} timed out: ");
+        };
+        alarm 5;
+        my $sock = IO::Socket::INET->new(
+            PeerAddr => $host,
+            PeerPort => $port,
+            Proto    => 'tcp',
+            Timeout  => 5,
+        );
+        if ($sock) {
+            print $sock "GET ${path} HTTP/1.1\r\nUser-Agent: SSP/" . $VERSION . "\r\nHost: ${host}\r\n\r\n";
+            sysread $sock, $reply, 1500;
+            close $sock;
+        }
+        alarm 0;
+        if ( $reply and $reply =~ m{ ^ \s* (\d+\.\d+\.\d+\.\d+) \s* $ }xms ) {
+            $ip = $1;
+            chomp $ip;
+            return $ip;
+        }
+    }
+}
+
+sub module_sanity_check {
+	print_working("Checking if Perl Module IO::Socket::PortState qw(check_ports) is installed: ");
+	eval("use IO::Socket::PortState qw(check_ports)");
+	if ($@) {
+		print_warn("No - Installing!");
+		my $modinstall = qx[ /usr/local/cpanel/bin/cpanm IO::Socket::PortState ];
+	}
+	else { 
+		print_OK("OK!");
+	}
+	return;
+}
+
+sub print_working {
+    my $text = shift;
+    print BOLD YELLOW ON_BLACK . $text ;
+}
+
+sub print_warn {
+    my $text = shift;
+    print BOLD RED ON_BLACK . $text . "\n";
+}
+
+sub print_OK {
+    my $text = shift;
+    print BOLD GREEN ON_BLACK . $text . "\n";
+}
+
+sub system_formatted {
+	open (my $cmd, "-|", "$_[0]");
+	while (<$cmd>) {
+		print_formatted("$_");
+	}
+	close $cmd;
+}
+
+sub print_formatted {
+	my @input = split /\n/, $_[0];
+	foreach (@input) { print "    $_\n"; }
+}
+
+sub check_kernel_hostname {
+	print_working("Verifying if sysctl kernel.hostname matches " . $HOSTNAME . ": ");
+	$KERN_HOSTNAME = qx [ sysctl kernel.hostname | cut -d = -f2 ];
+	$KERN_HOSTNAME = alltrim($KERN_HOSTNAME);
+	if ($KERN_HOSTNAME eq $HOSTNAME) { 
+		print_OK("Valid!");
+	}
+	else { 
+		print_warn("Failed!");
+	} 
+}
+
+sub alltrim() {
+    my $string2trim=$_[0];
+    $string2trim =~ s/^\s*(.*?)\s*$/$1/;
+    return $string2trim;
+}
+
+sub get_ip_of_hostname {
+	print_working("Obtaining the IP for hostname $HOSTNAME: ");
+	$HOSTNAME_IP = qx[ dig \@208.67.222.222 $HOSTNAME +short ];
+	chomp($HOSTNAME_IP);
+	# DEBUG 
+	$HOSTNAME_IP="208.74.121.106";
+	# DEBUG 
+	if ($HOSTNAME_IP) { 
+		$OK=1;
+	}
+	else { 
+		$OK=0;
+	}
+	if ($HOSTNAME_IP eq $EXTERNAL_IP_ADDRESS_80) { 
+		$OK=1;
+	}
+	else { 
+		$OK=0;
+	}
+	if ($OK) { print_OK($HOSTNAME_IP); } else { print_warn("Failed!"); }
+}
+
+sub get_reverse_of_ip {
+	return if !($HOSTNAME_IP);
+	print_working("Reversing IP ($HOSTNAME_IP) ");
+	if ($HOSTNAME_IP) { 
+		$REVERSED_IP = qx[ dig \@208.67.220.220 -x $HOSTNAME_IP +short ];
+		chomp($REVERSED_IP);
+		if ($REVERSED_IP) { 
+			print_OK($REVERSED_IP);
+		}
+		else {
+			print_warn("Failed!");
+		}
+	}
+}
+
+sub check_file_for_odd_chars { 
+	$TheFile=$_[0];
+	return if ! -e $TheFile;
+	print_working("Checking $TheFile for non-ascii characters ");
+	open(HOSTS,$TheFile);
+	@DATA=<HOSTS>;
+	close(HOSTS);
+	my @invalid=undef;
+	my $cnt=0;
+	foreach $line(@DATA) {
+        	chomp($line);
+        	if ($line =~ /[^!-~\s]/g) {
+                	push(@invalid,"$line contains ($&)");
+        	}
+	}
+	$cnt=@invalid;
+	$cnt--;
+	if ($cnt>0) {
+        	print_warn("There are $cnt lines in $TheFile that contain non-ascii characters: ");
+        	foreach $invalid(@invalid) {
+               	chomp($invalid);
+               	print "$invalid\n";
+        	}
+	}
+	else { 
+		print_OK("All Good");
+	}
+}
+
+sub check_if_hostname_resolves_locally { 
+	print_working("Does $HOSTNAME resolve locally: ");
+	$LOCAL_HOSTNAME_IP = qx[ dig \@localhost $HOSTNAME +short ];
+	chomp($LOCAL_HOSTNAME_IP);
+	if ($LOCAL_HOSTNAME_IP) { 
+		print_OK("Yes");
+	}
+	else { 
+		print_warn("No");
+		return;
+	}
+	print_working("Does $LOCAL_HOSTNAME_IP reverse back to $HOSTNAME: ");
+	$LOCAL_HOSTNAME_REVERSED = qx[ dig \@localhost -x $LOCAL_HOSTNAME_IP +short ];
+	chomp($LOCAL_HOSTNAME_REVERSED);
+	chop($LOCAL_HOSTNAME_REVERSED);
+	if ($LOCAL_HOSTNAME_REVERSED eq $HOSTNAME) { 
+		print_OK("Yes");
+	}
+	else { 
+		print_warn("No");
+	}
+}
+
+sub check_for_license_error { 
+	print_working("Checking for license error: ");
+	if (-e("/usr/local/cpanel/logs/license_error.display")) { 
+		open(LICERR,"/usr/local/cpanel/logs/license_error.display");
+		@LICERR=<LICERR>;
+		close(LICERR);
+		foreach $errline(@LICERR) { 
+			chomp($errline);
+			print "$errline\n";
+		}	
+	}
+	else { 
+		print_OK("None");
+	}
+}
+
+sub get_hostname_at_install { 
+	return if ! -e "/var/log/cpanel-install.log";
+	print_working("Hostname at time of cPanel install was: ");
+	$HOSTNAME_AT_INSTALL=qx[ grep 'Validating that the system hostname' /var/log/cpanel-install.log | cut -d \" \" -f12 | cut -d \"\'\" -f2 ];
+	chomp($HOSTNAME_AT_INSTALL);
+	if (!($HOSTNAME_AT_INSTALL)) { 
+		print_warn("Unknown");
+	}
+	else { 
+		print_OK($HOSTNAME_AT_INSTALL);
+	}
+}
+
+sub check_nat { 
+	print_working("Displaying NAT info (if any)\n");
+	@NATINFO=qx[ ip addr | grep 'inet ' ];
+	foreach $natline(@NATINFO) { 
+		chomp($natline);
+		($internal1)=(split(/\s+/,$natline))[2];
+		($internal)=(split(/\//,$internal1))[0];
+		if ($internal eq "127.0.0.1") { next; }
+		print BOLD MAGENTA ON_BLACK . "\t \\_ Internal: $internal / External: ";
+		$external=qx[ wget -O - -q --tries=1 --timeout=2 --bind-address=$internal http://myip.cpanel.net/v1.0/ ];
+		if ($external) { 
+			print "$external\n";
+		}
+		else { 
+			print "No Reply!\n";
+		}
+	}
+}
+
+sub check_root_servers { 
+	print_working("Checking if this server can resolve ROOT servers:\n");
+	@ROOT=qw( a b c d e f g h i j k l m );
+	$ROOT_HOST=".root-servers.net";
+	foreach $rootserver(@ROOT) { 
+		$rootserver = $rootserver . $ROOT_HOST;
+		$GOOD=qx[ dig $rootserver +short ];
+		if ($GOOD) { 
+			print_OK("\t \\_ $rootserver - OK!");	
+		}
+		else { 
+			print_warn("\t \\_ $rootserver - Failed!");	
+		}
+	}
+}
+
+sub get_date { 
+	print_working("Checking Date/Time: ");
+	$servertime = time();
+	chomp($servertime);
+	$server_dt = DateTime->from_epoch( epoch => $servertime );
+	$utctime = qx[ curl -s https://cpaneltech.ninja/cptech/date.php ];
+	chomp($utctime);
+	$site_dt = DateTime->from_epoch( epoch => $utctime );
+	$datediff=$servertime-$utctime;
+	if ($datediff = 0 or $datediff <= 5 or $datediff <= -5) { 
+		print_OK("OK - Server Time: " . $servertime . " / Outside location: " . $utctime . " (Within 5 seconds)");
+	}
+	else { 
+		print_warn("Date is off by more than 5 seconds: This Server: " . $servertime . " / Outside location: " . $utctime);
+	}
+}
+
+sub get_hwaddr { 
+	print_working("Obtaining MAC address: ");
+	$envtype=qx[ cat /var/cpanel/envtype ];
+	chomp($envtype);
+	if ($envtype eq "Virtuozzo") { 
+		print_warn("Not available on $envtype");
+		return;
+	}
+	else { 
+		($MAC)=(split(/\s+/,qx[ ifconfig | grep ether ]))[2];
+	}
+	if ($MAC) { 
+		print_OK($MAC);
+	}
+	else { 
+		print_warn("Unknown");
+	}
+}
+
+sub check_auth_cpanel_resolution { 
+	print_working("Checking to see if auth.cpanel.net can resolve: ");
+	$AUTH_RESOLUTION = qx[ dig \@localhost auth.cpanel.net +short ];
+	chomp($AUTH_RESOLUTION);
+	if ($AUTH_RESOLUTION) { 
+		print_OK("OK!");
+	}
+	else { 
+		print_warn("Failed!");
+	}
+}
+
+sub check_etc_mtab_file { 
+	print_working("Checking /etc/mtab file: "); 
+	my $filestatus="";
+	if (-e("/etc/mtab")) { 
+		$filestatus = "Exists!";
+	}
+	else { 
+		$filestatus = "Missing!";
+	}
+	if (-l("/etc/mtab")) { 
+		my $target=readlink("/etc/mtab");
+		$filestatus .= ", is a symlink to: " . $target;
+	}
+	else { 
+		$filestatus .= ", is a regular file (not symlinked)";
+		if (-z("/etc/mtab")) { 
+			$filestatus .= ", is empty";
+		}
+		else { 
+			$filestatus .= ", is not empty";
+		}
+	}
+	print_OK($filestatus);
+}
+
+sub check_other_ports { 
+	print_working("Checking firewall (if license ports can access auth.cpanel.net):\n");
+	use IO::Socket::PortState qw(check_ports);
+	my %port_hash = ( 
+		tcp => { 
+			2089	=> {},
+			80		=> {},
+			110		=> {},
+			143		=> {},
+			25		=> {},
+			23		=> {},
+			993		=> {},
+			995		=> {},
+		}
+	);
+	my $timeout = 5;
+	my $host = 'auth.cpanel.net';
+	chomp($host);
+	my $host_hr = check_ports($host,$timeout,\%port_hash);
+	for my $port (sort {$a <=> $b} keys %{$host_hr->{tcp}}) {
+	   	my $yesno = $host_hr->{tcp}{$port}{open} ? "OK!" : "Failed!";
+		chomp($yesno);
+   		print_OK("\t \\_ " . $port . " - " . $yesno);
+	}
+}
+
+sub check_perms_on_cpanel_lisc_file {
+	print_working("Checking permissions on cpanel.lisc file: ");
+	my $statmode = ( stat("/usr/local/cpanel/cpanel.lisc") )[2] & 07777;
+    $statmode = sprintf "%lo", $statmode;
+    if ( $statmode != 644 ) {
+		print_warn("Invalid - (" . $statmode . ") - Should be 0644");
+	}
+	else {
+		print_OK("OK!");
+	}
+}
+
+sub is_file_immutable {
+	my $file = $_[0];
+	print_working("Checking if cpanel.lisc file is set to immutable: ");
+    my $attr = `/usr/bin/lsattr $file`;
+    if ( $attr =~ m/^\s*\S*[ai]/ ) { 
+		print_warn("cpanel.lisc file is immutable");
+	}
+	else { 
+		print_OK("OK!");
+	}
+}
+
+sub read_last_50_lines_of_license_log { 
+	print_working("Displaying last 50 lines of /usr/local/cpanel/logs/license_log:\n");
+	my $lineswanted=50;
+    my $filename = "/usr/local/cpanel/logs/license_log";
+    my ($line, $filesize, $seekpos, $numread, @lines);
+    open F, $filename or die "Can't read $filename: $!\n";
+    $filesize = -s $filename;
+    $seekpos = 50 * $lineswanted;
+    $numread = 0;
+    while ($numread < $lineswanted) {
+        @lines = ();
+        $numread = 0;
+        seek(F, $filesize - $seekpos, 0);
+        <F> if $seekpos < $filesize; # Discard probably fragmentary line
+        while (defined($line = <F>)) {
+            push @lines, $line;
+            shift @lines if ++$numread > $lineswanted;
+        }
+        if ($numread < $lineswanted) {
+            if ($seekpos >= $filesize) {
+            	die "There aren't even $lineswanted lines in $filename - I got $numread\n";
+            }
+            $seekpos *= 2;
+            $seekpos = $filesize if $seekpos >= $filesize;
+        }
+    }
+    close F;
+    print @lines;
+}
