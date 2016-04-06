@@ -16,9 +16,8 @@ use IO::Socket::INET;
 use Sys::Hostname;
 use Time::Local;
 use Term::ANSIColor qw(:constants);
-use DateTime;
 
-my $version="1.0";
+my $version="1.1";
 
 $Term::ANSIColor::AUTORESET = 1;
 $| = 1;
@@ -138,7 +137,7 @@ sub get_external_ip {
 }
 
 sub module_sanity_check {
-    my @required_mods=qw( IO::Socket::PortState DateTime );
+    my @required_mods=qw( IO::Socket::PortState DateTime Net::Address::Ethernet );
     my $reqmod;
     print_working("Checking if required Perl Modules are installed:\n");
     foreach $reqmod(@required_mods) {
@@ -385,7 +384,8 @@ sub get_hwaddr {
 		return;
 	}
 	else { 
-		($MAC)=(split(/\s+/,qx[ ifconfig | grep ether ]))[2];
+	    eval("use Net::Address::Ethernet qw( get_address )");
+        $MAC = get_address;
 	}
 	if ($MAC) { 
 		print_OK($MAC);
@@ -434,7 +434,7 @@ sub check_etc_mtab_file {
 
 sub check_other_ports { 
 	print_working("Checking firewall (if license ports can access auth.cpanel.net):\n");
-	eval("use IO::Socket::PortState qw(check_ports)");
+	eval("use IO::Socket::PortState qw( check_ports )");
 	my %port_hash = ( 
 		tcp => { 
 			2089	=> {},
