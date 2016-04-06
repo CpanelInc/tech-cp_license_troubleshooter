@@ -384,7 +384,8 @@ sub get_hwaddr {
 		return;
 	}
 	else { 
-	    eval("use Net::Address::Ethernet qw( get_address )");
+	    #eval("use Net::Address::Ethernet qw( get_address )");
+	    use Net::Address::Ethernet qw( get_address );
         $MAC = get_address;
 	}
 	if ($MAC) { 
