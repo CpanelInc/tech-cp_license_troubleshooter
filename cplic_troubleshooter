@@ -17,7 +17,7 @@ use Sys::Hostname;
 use Time::Local;
 use Term::ANSIColor qw(:constants);
 
-my $version="1.2";
+my $version="1.3";
 
 $Term::ANSIColor::AUTORESET = 1;
 $| = 1;
@@ -360,6 +360,7 @@ sub check_root_servers {
 
 sub get_date { 
 	print_working("Checking Date/Time: ");
+    eval("use DateTime");
 	my $servertime = time();
 	chomp($servertime);
 	my $server_dt = DateTime->from_epoch( epoch => $servertime );
