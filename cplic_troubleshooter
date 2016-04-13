@@ -204,9 +204,6 @@ sub get_ip_of_hostname {
 	print_working("Obtaining the IP for hostname $HOSTNAME: ");
 	my $HOSTNAME_IP = qx[ dig \@208.67.222.222 $HOSTNAME +short ];
 	chomp($HOSTNAME_IP);
-	# DEBUG 
-	$HOSTNAME_IP="208.74.121.106";
-	# DEBUG 
 	if ($HOSTNAME_IP) { 
 		$OK=1;
 	}
