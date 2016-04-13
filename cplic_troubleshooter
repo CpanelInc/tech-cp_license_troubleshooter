@@ -17,12 +17,13 @@ use Sys::Hostname;
 use Time::Local;
 use Term::ANSIColor qw(:constants);
 
-my $version="1.3";
+my $version="1.4";
 
 $Term::ANSIColor::AUTORESET = 1;
 $| = 1;
 
 system("clear");
+print "cPanel License Troubleshooter - Version: $version\n\n";
 
 &module_sanity_check();
 
@@ -292,6 +293,7 @@ sub check_if_hostname_resolves_locally {
 sub check_for_license_error { 
 	print_working("Checking for license error: ");
 	if (-e("/usr/local/cpanel/logs/license_error.display")) { 
+        print "\n";
 		open(LICERR,"/usr/local/cpanel/logs/license_error.display");
 		my @LICERR=<LICERR>;
         my $errline; 
@@ -300,6 +302,7 @@ sub check_for_license_error {
 			chomp($errline);
 			print "$errline\n";
 		}	
+        print "\n";
 	}
 	else { 
 		print_OK("None");
@@ -459,6 +462,10 @@ sub check_other_ports {
 
 sub check_perms_on_cpanel_lisc_file {
 	print_working("Checking permissions on cpanel.lisc file: ");
+    if (! -e "/usr/local/cpanel/cpanel.lisc") { 
+        print_warn("cpanel.lisc file is missing!");
+        return;
+    }
 	my $statmode = ( stat("/usr/local/cpanel/cpanel.lisc") )[2] & 07777;
     $statmode = sprintf "%lo", $statmode;
     if ( $statmode != 644 ) {
@@ -472,6 +479,10 @@ sub check_perms_on_cpanel_lisc_file {
 sub is_file_immutable {
 	my $file = $_[0];
 	print_working("Checking if cpanel.lisc file is set to immutable: ");
+    if (! -e "/usr/local/cpanel/cpanel.lisc") { 
+        print_warn("cpanel.lisc file is missing!");
+        return;
+    }
     my $attr = `/usr/bin/lsattr $file`;
     if ( $attr =~ m/^\s*\S*[ai]/ ) { 
 		print_warn("cpanel.lisc file is immutable");
