@@ -43,6 +43,7 @@ check_for_license_error();
 get_hostname_at_install();
 check_nat();
 check_root_servers();
+is_ntpd_installed();
 get_date();
 get_hwaddr();
 check_auth_cpanel_resolution();
@@ -511,4 +512,15 @@ sub read_last_50_lines_of_license_log {
     }
     close F;
     print @lines;
+}
+
+sub is_ntpd_installed { 
+    print_working("Checking to see if ntp[d] is installed: ");
+    my $ntpfound = qx[ ps ax | grep ntp | grep -v grep ];
+    if ($ntpfound) { 
+        print_OK("Yes");
+    }    
+    else {
+        print_OK("No (Note that it is not required.)");
+    }
 }
