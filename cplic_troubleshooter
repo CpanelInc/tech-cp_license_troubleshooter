@@ -12,12 +12,13 @@ BEGIN {
 }
 
 use strict;
+use Socket;
 use IO::Socket::INET;
 use Sys::Hostname;
 use Time::Local;
 use Term::ANSIColor qw(:constants);
 
-my $version="1.4";
+my $version="1.5";
 
 $Term::ANSIColor::AUTORESET = 1;
 $| = 1;
@@ -34,6 +35,9 @@ our $MAC;
 
 is_license_valid();
 is_hostname_fqdn();
+get_envtype();
+get_mainip();
+get_devices();
 check_kernel_hostname();
 get_ip_of_hostname();
 get_reverse_of_ip();
@@ -46,12 +50,12 @@ check_nat();
 check_root_servers();
 is_ntpd_installed();
 get_date();
-get_hwaddr();
 check_auth_cpanel_resolution();
 check_etc_mtab_file();
 check_other_ports();
 check_perms_on_cpanel_lisc_file();
 is_file_immutable("/usr/local/cpanel/cpanel.lisc");
+display_route();
 read_last_50_lines_of_license_log();
 
 exit;
@@ -139,7 +143,7 @@ sub get_external_ip {
 }
 
 sub module_sanity_check {
-    my @required_mods=qw( IO::Socket::PortState DateTime Net::Address::Ethernet );
+    my @required_mods=qw( DateTime IO::Socket::PortState IO::Interface::Simple );
     my $reqmod;
     print_working("Checking if required Perl Modules are installed:\n");
     foreach $reqmod(@required_mods) {
@@ -198,6 +202,25 @@ sub alltrim() {
     my $string2trim=$_[0];
     $string2trim =~ s/^\s*(.*?)\s*$/$1/;
     return $string2trim;
+}
+
+sub get_devices {
+	my $device;
+	print_working("Obtaining devices:\n");
+	opendir(NICS,"/sys/class/net");
+	my @DEVICES=readdir(NICS);
+	closedir(NICS);
+	foreach $device(@DEVICES) { 
+		chomp($device);
+		if ($device eq "." or $device eq ".." or $device eq "lo") { next; }
+		my $if = IO::Interface::Simple->new($device);
+		print BOLD MAGENTA ON_BLACK . "\t \\_ Ethernet Device Name: " . CYAN $device . "\n";
+		print BOLD YELLOW . "\t\t \\_ Address: " . CYAN $if->address . "\n";
+		print BOLD YELLOW . "\t\t \\_ MAC: " . CYAN $if->hwaddr . "\n";
+		print BOLD YELLOW . "\t\t \\_ Broadcast: " . CYAN $if->broadcast . "\n";
+		print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n";
+		print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n";
+	}
 }
 
 sub get_ip_of_hostname {
@@ -377,26 +400,6 @@ sub get_date {
 	}
 }
 
-sub get_hwaddr { 
-	print_working("Obtaining MAC address: ");
-	my $envtype=qx[ cat /var/cpanel/envtype ];
-	chomp($envtype);
-	if ($envtype eq "Virtuozzo") { 
-		print_warn("Not available on $envtype");
-		return;
-	}
-	else { 
-	    eval("use Net::Address::Ethernet qw( get_address )");
-        $MAC = get_address();
-	}
-	if ($MAC) { 
-		print_OK($MAC);
-	}
-	else { 
-		print_warn("Unknown");
-	}
-}
-
 sub check_auth_cpanel_resolution { 
 	print_working("Checking to see if auth.cpanel.net can resolve: ");
 	my $AUTH_RESOLUTION = qx[ dig \@localhost auth.cpanel.net +short ];
@@ -531,4 +534,35 @@ sub is_ntpd_installed {
     else {
         print_OK("No (Note that it is not required.)");
     }
+}
+
+sub get_envtype {
+	print_working("This server's environment (envtype) is: ");
+	open(ENVTYPE,"/var/cpanel/envtype");
+	my $envtype=<ENVTYPE>;
+	close(ENVTYPE);
+	if ($envtype) { 
+		print_OK($envtype);
+	}
+	else { 
+		print_OK("Unknown");
+	}
+}
+
+sub get_mainip {
+	print_working("/var/cpanel/mainip: ");
+	open(MAINIP,"/var/cpanel/mainip");
+	my $mainip=<MAINIP>;
+	close(MAINIP);
+	if ($mainip) { 
+		print_OK($mainip);
+	}
+	else { 
+		print_OK("Missing");
+	}
+}
+
+sub display_route {
+	print_working("Displaying route (ip route):\n");
+	system_formatted("ip route");
 }
