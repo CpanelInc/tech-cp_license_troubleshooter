@@ -563,6 +563,9 @@ sub get_mainip {
 }
 
 sub display_route {
-	print_working("Displaying route (ip route):\n");
+	print_working("Displaying route -n:\n");
+	system_formatted("route -n");
+    print "\n\n";
+	print_working("Displaying ip route:\n");
 	system_formatted("ip route");
 }
