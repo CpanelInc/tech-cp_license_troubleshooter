@@ -17,8 +17,9 @@ use IO::Socket::INET;
 use Sys::Hostname;
 use Time::Local;
 use Term::ANSIColor qw(:constants);
+use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version="1.5";
+my $version="1.6";
 
 $Term::ANSIColor::AUTORESET = 1;
 $| = 1;
@@ -37,6 +38,7 @@ is_license_valid();
 is_hostname_fqdn();
 get_envtype();
 get_mainip();
+get_wwwacctconf_ip();
 get_devices();
 check_kernel_hostname();
 get_ip_of_hostname();
@@ -565,7 +567,13 @@ sub get_mainip {
 sub display_route {
 	print_working("Displaying route -n:\n");
 	system_formatted("route -n");
-    print "\n\n";
 	print_working("Displaying ip route:\n");
 	system_formatted("ip route");
+}
+
+sub get_wwwacctconf_ip { 
+    my $conf = Cpanel::Config::LoadWwwAcctConf::loadwwwacctconf();
+    print_working("Obtaining ADDR from /etc/wwwacct.conf file: ");
+    my $wwwacctIP=$conf->{'ADDR'};
+    print_OK($wwwacctIP);
 }
