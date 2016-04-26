@@ -19,7 +19,7 @@ use Time::Local;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version="1.6";
+my $version="1.7";
 
 $Term::ANSIColor::AUTORESET = 1;
 $| = 1;
@@ -30,6 +30,7 @@ print "cPanel License Troubleshooter - Version: $version\n\n";
 &module_sanity_check();
 
 our $HOSTNAME;
+our $mainip;
 our $HOSTNAME_IP;
 our $EXTERNAL_IP_ADDRESS_80 = determine_ip(80);
 our $MAC;
@@ -152,7 +153,7 @@ sub module_sanity_check {
         eval("use $reqmod");
         if ($@) {
             print_warn("\t \\_ " . $reqmod . " No - Installing!");
-            my $modinstall = qx[ /usr/local/cpanel/bin/cpanm $reqmod ];
+            my $modinstall = qx[ /usr/local/cpanel/bin/cpanm $reqmod 2> /dev/null ];
         }
         else { 
             print_OK("\t \\_ " . $reqmod . " OK!");
@@ -190,7 +191,7 @@ sub print_formatted {
 
 sub check_kernel_hostname {
 	print_working("Verifying if sysctl kernel.hostname matches " . $HOSTNAME . ": ");
-	my $KERN_HOSTNAME = qx [ sysctl kernel.hostname | cut -d = -f2 ];
+	my $KERN_HOSTNAME = qx [ sysctl kernel.hostname | cut -d = -f2 2> /dev/null ];
 	$KERN_HOSTNAME = alltrim($KERN_HOSTNAME);
 	if ($KERN_HOSTNAME eq $HOSTNAME) { 
 		print_OK("Valid!");
@@ -228,7 +229,7 @@ sub get_devices {
 sub get_ip_of_hostname {
     my $OK;
 	print_working("Obtaining the IP for hostname $HOSTNAME: ");
-	my $HOSTNAME_IP = qx[ dig \@208.67.222.222 $HOSTNAME +short ];
+	my $HOSTNAME_IP = qx[ dig \@208.67.222.222 $HOSTNAME +short 2> /dev/null ];
 	chomp($HOSTNAME_IP);
 	if ($HOSTNAME_IP) { 
 		$OK=1;
@@ -249,7 +250,7 @@ sub get_reverse_of_ip {
 	return if !($HOSTNAME_IP);
 	print_working("Reversing IP ($HOSTNAME_IP) ");
 	if ($HOSTNAME_IP) { 
-		my $REVERSED_IP = qx[ dig \@208.67.220.220 -x $HOSTNAME_IP +short ];
+		my $REVERSED_IP = qx[ dig \@208.67.220.220 -x $HOSTNAME_IP +short 2> /dev/null ];
 		chomp($REVERSED_IP);
 		if ($REVERSED_IP) { 
 			print_OK($REVERSED_IP);
@@ -294,7 +295,7 @@ sub check_file_for_odd_chars {
 
 sub check_if_hostname_resolves_locally { 
 	print_working("Does $HOSTNAME resolve locally: ");
-	my $LOCAL_HOSTNAME_IP = qx[ dig \@localhost $HOSTNAME +short ];
+	my $LOCAL_HOSTNAME_IP = qx[ dig \@$mainip $HOSTNAME +short 2> /dev/null ];
 	chomp($LOCAL_HOSTNAME_IP);
 	if ($LOCAL_HOSTNAME_IP) { 
 		print_OK("Yes");
@@ -304,7 +305,7 @@ sub check_if_hostname_resolves_locally {
 		return;
 	}
 	print_working("Does $LOCAL_HOSTNAME_IP reverse back to $HOSTNAME: ");
-	my $LOCAL_HOSTNAME_REVERSED = qx[ dig \@localhost -x $LOCAL_HOSTNAME_IP +short ];
+	my $LOCAL_HOSTNAME_REVERSED = qx[ dig \@$mainip -x $LOCAL_HOSTNAME_IP +short 2> /dev/null ];
 	chomp($LOCAL_HOSTNAME_REVERSED);
 	chop($LOCAL_HOSTNAME_REVERSED);
 	if ($LOCAL_HOSTNAME_REVERSED eq $HOSTNAME) { 
@@ -337,7 +338,7 @@ sub check_for_license_error {
 sub get_hostname_at_install { 
 	return if ! -e "/var/log/cpanel-install.log";
 	print_working("Hostname at time of cPanel install was: ");
-	my $HOSTNAME_AT_INSTALL=qx[ grep 'Validating that the system hostname' /var/log/cpanel-install.log | cut -d \" \" -f12 | cut -d \"\'\" -f2 ];
+	my $HOSTNAME_AT_INSTALL=qx[ grep 'Validating that the system hostname' /var/log/cpanel-install.log | cut -d \" \" -f12 | cut -d \"\'\" -f2 2> /dev/null ];
 	chomp($HOSTNAME_AT_INSTALL);
 	if (!($HOSTNAME_AT_INSTALL)) { 
 		print_warn("Unknown");
@@ -349,7 +350,7 @@ sub get_hostname_at_install {
 
 sub check_nat { 
 	print_working("Displaying NAT info (if any)\n");
-	my @NATINFO=qx[ ip addr | grep 'inet ' ];
+	my @NATINFO=qx[ ip addr | grep 'inet ' 2> /dev/null ];
     my $natline;
 	foreach $natline(@NATINFO) { 
 		chomp($natline);
@@ -357,7 +358,7 @@ sub check_nat {
 		my ($internal)=(split(/\//,$internal1))[0];
 		if ($internal eq "127.0.0.1") { next; }
 		print BOLD MAGENTA ON_BLACK . "\t \\_ Internal: $internal / External: ";
-		my $external=qx[ wget -O - -q --tries=1 --timeout=2 --bind-address=$internal http://myip.cpanel.net/v1.0/ ];
+		my $external=qx[ wget -O - -q --tries=1 --timeout=2 --bind-address=$internal http://myip.cpanel.net/v1.0/ 2> /dev/null ];
 		if ($external) { 
 			print "$external\n";
 		}
@@ -374,7 +375,7 @@ sub check_root_servers {
     my $rootserver;
 	foreach $rootserver(@ROOT) { 
 		$rootserver = $rootserver . $ROOT_HOST;
-		my $GOOD=qx[ dig $rootserver +short ];
+		my $GOOD=qx[ dig $rootserver +short 2> /dev/null ];
 		if ($GOOD) { 
 			print_OK("\t \\_ $rootserver - OK!");	
 		}
@@ -390,7 +391,7 @@ sub get_date {
 	my $servertime = time();
 	chomp($servertime);
 	my $server_dt = DateTime->from_epoch( epoch => $servertime );
-	my $utctime = qx[ curl -s https://cpaneltech.ninja/cptech/date.php ];
+	my $utctime = qx[ curl -s https://cpaneltech.ninja/cptech/date.php 2> /dev/null ];
 	chomp($utctime);
 	my $site_dt = DateTime->from_epoch( epoch => $utctime );
 	my $datediff=$servertime-$utctime;
@@ -404,7 +405,7 @@ sub get_date {
 
 sub check_auth_cpanel_resolution { 
 	print_working("Checking to see if auth.cpanel.net can resolve: ");
-	my $AUTH_RESOLUTION = qx[ dig \@localhost auth.cpanel.net +short ];
+	my $AUTH_RESOLUTION = qx[ dig \@$mainip auth.cpanel.net +short 2> /dev/null ];
 	chomp($AUTH_RESOLUTION);
 	if ($AUTH_RESOLUTION) { 
 		print_OK("OK!");
@@ -529,7 +530,7 @@ sub read_last_50_lines_of_license_log {
 
 sub is_ntpd_installed { 
     print_working("Checking to see if ntp[d] is installed: ");
-    my $ntpfound = qx[ ps ax | grep ntp | grep -v grep ];
+    my $ntpfound = qx[ ps ax | grep ntp | grep -v grep 2> /dev/null ];
     if ($ntpfound) { 
         print_OK("Yes");
     }    
@@ -554,7 +555,7 @@ sub get_envtype {
 sub get_mainip {
 	print_working("/var/cpanel/mainip: ");
 	open(MAINIP,"/var/cpanel/mainip");
-	my $mainip=<MAINIP>;
+	$mainip=<MAINIP>;
 	close(MAINIP);
 	if ($mainip) { 
 		print_OK($mainip);
