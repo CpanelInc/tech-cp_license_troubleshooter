@@ -38,7 +38,7 @@ print "cPanel License Troubleshooter - Version: $version\n\n";
 
 our $HOSTNAME;
 our $mainip;
-our $envtype
+our $envtype;
 our $HOSTNAME_IP;
 our $EXTERNAL_IP_ADDRESS_80 = determine_ip(80);
 our $MAC;
@@ -79,7 +79,7 @@ exit;
 
 sub determine_ip { 
 	my $port=$_[0];
-	print_working("The servers external IP address (port $port): ");
+	print_working("Obtaining the external IP address (port $port): ");
 	my $EXTERNAL_IP_ADDRESS = get_external_ip($port);
 	print_OK($EXTERNAL_IP_ADDRESS) unless !( $EXTERNAL_IP_ADDRESS); 
 	return $EXTERNAL_IP_ADDRESS;
@@ -531,17 +531,17 @@ sub check_perms_on_cpanel_lisc_file {
     my @OutPut = qx[ strings /usr/local/cpanel/cpanel.lisc | sed -n '/License Version/,/crc32/p' ];
     my $lineoutput;
     foreach $lineoutput(@OutPut) { 
-        chomp($lineoutput);
+	    chomp($lineoutput);
 	    print BOLD YELLOW "\t \\_ " . $lineoutput . "\n";
     }
 }
 
 sub is_file_immutable {
 	my $file = $_[0];
-    chomp($file);
+	chomp($file);
 	print_working("Checking if $file is set to immutable: ");
     if (! -e "$file") { 
-        print_warn("$file is missing!");
+        print_warn("$file file is missing!");
         return;
     }
     my $attr = `/usr/bin/lsattr $file`;
