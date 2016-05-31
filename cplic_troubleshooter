@@ -9,6 +9,7 @@
 
 BEGIN {
    unshift @INC, '/usr/local/share/perl5';
+   unshift @INC, '/usr/local/lib/perl5/site_perl/5.8.8';
 }
 
 use strict;
@@ -16,13 +17,19 @@ use Socket;
 use IO::Socket::INET;
 use Sys::Hostname;
 use Time::Local;
+use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version="1.8";
+my $version="1.9";
 
 $Term::ANSIColor::AUTORESET = 1;
 $| = 1;
+
+my ($skipdate);
+GetOptions (
+    "skipdate" => \$skipdate,
+);
 
 system("clear");
 print "cPanel License Troubleshooter - Version: $version\n\n";
@@ -31,6 +38,7 @@ print "cPanel License Troubleshooter - Version: $version\n\n";
 
 our $HOSTNAME;
 our $mainip;
+our $envtype
 our $HOSTNAME_IP;
 our $EXTERNAL_IP_ADDRESS_80 = determine_ip(80);
 our $MAC;
@@ -42,6 +50,8 @@ get_mainip();
 get_wwwacctconf_ip();
 get_devices();
 check_kernel_hostname();
+display_etc_hostname();
+get_network_hostname();
 get_ip_of_hostname();
 get_reverse_of_ip();
 check_file_for_odd_chars("/etc/hosts");
@@ -49,7 +59,9 @@ check_file_for_odd_chars("/etc/sysconfig/network");
 check_if_hostname_resolves_locally();
 check_for_license_error();
 get_hostname_at_install();
-check_nat();
+
+check_routing();
+check_for_cpnat();
 check_root_servers();
 is_ntpd_installed();
 get_date();
@@ -58,6 +70,8 @@ check_etc_mtab_file();
 check_other_ports();
 check_perms_on_cpanel_lisc_file();
 is_file_immutable("/usr/local/cpanel/cpanel.lisc");
+is_file_immutable("/usr/local/cpanel/cpsanitycheck.so");
+run_rdate();
 display_route();
 read_last_50_lines_of_license_log();
 
@@ -65,7 +79,7 @@ exit;
 
 sub determine_ip { 
 	my $port=$_[0];
-	print_working("Obtaining the external IP address (port $port): ");
+	print_working("The servers external IP address (port $port): ");
 	my $EXTERNAL_IP_ADDRESS = get_external_ip($port);
 	print_OK($EXTERNAL_IP_ADDRESS) unless !( $EXTERNAL_IP_ADDRESS); 
 	return $EXTERNAL_IP_ADDRESS;
@@ -102,6 +116,10 @@ sub is_license_valid {
 	close $sock;
 	if ($buffer =~ m/active<br\/>/) { 
 		print_OK("Valid!");
+        # Check if test license
+        if ($buffer =~ m/15-DAY-TEST/) { 
+            print_OK("TEST LICENSE");
+        }
 		return;
 	}
 	if ($buffer =~ m/expired on<br\/>/) { 
@@ -146,7 +164,7 @@ sub get_external_ip {
 }
 
 sub module_sanity_check {
-    my @required_mods=qw( DateTime IO::Socket::PortState IO::Interface::Simple );
+    my @required_mods=qw( DateTime IO::Socket::PortState IO::Interface::Simple Data::Validate::IP );
     my $reqmod;
     print_working("Checking if required Perl Modules are installed:\n");
     foreach $reqmod(@required_mods) {
@@ -201,6 +219,24 @@ sub check_kernel_hostname {
 	} 
 }
 
+sub display_etc_hostname {
+    print_working("Checking for /etc/hostname file: ");
+    if (-e("/etc/hostname")) { 
+        my $etchostname = qx[ cat /etc/hostname ];
+        print_OK($etchostname);
+    }
+    else {
+        print_warn("None found!");
+    }
+}
+
+sub get_network_hostname { 
+    print_working("HOSTNAME from /etc/sysconfig/network: ");
+    my $networkhost = qx[ grep '^HOSTNAME=' /etc/sysconfig/network ];
+    chomp($networkhost);
+    print_OK($networkhost);
+}
+
 sub alltrim() {
     my $string2trim=$_[0];
     $string2trim =~ s/^\s*(.*?)\s*$/$1/;
@@ -223,15 +259,20 @@ sub get_devices {
 		print BOLD YELLOW . "\t\t \\_ Broadcast: " . CYAN $if->broadcast . "\n";
 		print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n";
 		print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n";
+        if ($device eq "eth0" and $if->address eq "") { 
+            print_warn("Device eth0 has no address - Seeing Waiting for devices to settle errors?");
+        }
 	}
 }
 
 sub get_ip_of_hostname {
-    my $OK;
 	print_working("Obtaining the IP for hostname $HOSTNAME: ");
+    eval("use Data::Validate::IP qw(is_ipv4)");
+    my $OK;
 	my $HOSTNAME_IP = qx[ dig \@208.67.222.222 $HOSTNAME +short 2> /dev/null ];
 	chomp($HOSTNAME_IP);
-	if ($HOSTNAME_IP) { 
+    my $IPValid=is_ipv4($HOSTNAME_IP);
+	if ($IPValid) { 
 		$OK=1;
 	}
 	else { 
@@ -243,13 +284,13 @@ sub get_ip_of_hostname {
 	else { 
 		$OK=0;
 	}
-	if ($OK) { 
+	if ($OK and $IPValid) { 
         print_OK($HOSTNAME_IP); 
     } 
     else { 
-        print_warn("Failed!\n"); 
-        print "HOSTNAME_IP: $HOSTNAME_IP / EXTERNAL_IP_ADDRESS_80: $EXTERNAL_IP_ADDRESS_80\n";
+        print_warn("Failed!"); 
     }
+    print BOLD YELLOW "\t \\_ Hostname IP: $HOSTNAME_IP / External IP Address: $EXTERNAL_IP_ADDRESS_80\n";
 }
 
 sub get_reverse_of_ip {
@@ -354,13 +395,13 @@ sub get_hostname_at_install {
 	}
 }
 
-sub check_nat { 
-	print_working("Displaying NAT info (if any)\n");
-	my @NATINFO=qx[ ip addr | grep 'inet ' 2> /dev/null ];
-    my $natline;
-	foreach $natline(@NATINFO) { 
-		chomp($natline);
-		my ($internal1)=(split(/\s+/,$natline))[2];
+sub check_routing { 
+	print_working("Displaying IP routing info (if any)\n");
+	my @ROUTINGINFO=qx[ ip addr | grep 'inet ' 2> /dev/null ];
+    my $routeline;
+	foreach $routeline(@ROUTINGINFO) { 
+		chomp($routeline);
+		my ($internal1)=(split(/\s+/,$routeline))[2];
 		my ($internal)=(split(/\//,$internal1))[0];
 		if ($internal eq "127.0.0.1") { next; }
 		print BOLD MAGENTA ON_BLACK . "\t \\_ Internal: $internal / External: ";
@@ -392,6 +433,7 @@ sub check_root_servers {
 }
 
 sub get_date { 
+    return if ($skipdate);
 	print_working("Checking Date/Time: ");
     eval("use DateTime");
 	my $servertime = time();
@@ -486,21 +528,28 @@ sub check_perms_on_cpanel_lisc_file {
 	else {
 		print_OK("OK!");
 	}
+    my @OutPut = qx[ strings /usr/local/cpanel/cpanel.lisc | sed -n '/License Version/,/crc32/p' ];
+    my $lineoutput;
+    foreach $lineoutput(@OutPut) { 
+        chomp($lineoutput);
+	    print BOLD YELLOW "\t \\_ " . $lineoutput . "\n";
+    }
 }
 
 sub is_file_immutable {
 	my $file = $_[0];
-	print_working("Checking if cpanel.lisc file is set to immutable: ");
-    if (! -e "/usr/local/cpanel/cpanel.lisc") { 
-        print_warn("cpanel.lisc file is missing!");
+    chomp($file);
+	print_working("Checking if $file is set to immutable: ");
+    if (! -e "$file") { 
+        print_warn("$file is missing!");
         return;
     }
     my $attr = `/usr/bin/lsattr $file`;
     if ( $attr =~ m/^\s*\S*[ai]/ ) { 
-		print_warn("cpanel.lisc file is immutable");
+		print_warn("$file is immutable");
 	}
 	else { 
-		print_OK("OK!");
+		print_OK("All Good!");
 	}
 }
 
@@ -548,7 +597,7 @@ sub is_ntpd_installed {
 sub get_envtype {
 	print_working("This server's environment (envtype) is: ");
 	open(ENVTYPE,"/var/cpanel/envtype");
-	my $envtype=<ENVTYPE>;
+	$envtype=<ENVTYPE>;
 	close(ENVTYPE);
 	if ($envtype) { 
 		print_OK($envtype);
@@ -585,4 +634,31 @@ sub get_wwwacctconf_ip {
     print_working("Obtaining ADDR from /etc/wwwacct.conf file: ");
     my $wwwacctIP=$conf->{'ADDR'};
     print_OK($wwwacctIP);
+}
+
+sub check_cron_log { 
+    print_working("Checking /var/log/cron for existance of cpkeyclt: ");
+    my $ExistsInCron=qx[ grep '\bcpkeyclt\b' /var/log/cron ];
+    if ($ExistsInCron) { 
+        print_warn("Found!");
+    }
+    else { 
+        print_OK("None Found!");
+    }
+}
+
+sub check_for_cpnat { 
+    print_working("Checking for existence of cpnat file (1:1 NAT): ");
+    if (-e("/var/cpanel/cpnat")) { 
+        print_OK("Found one");
+    }
+    else { 
+        print_OK("None");
+    }
+}
+
+sub run_rdate { 
+    return if ($envtype eq "Virtuozzo");
+    print_working("Running rdate: ");
+    system_formatted("rdate -s rdate.cpanel.net");
 }
