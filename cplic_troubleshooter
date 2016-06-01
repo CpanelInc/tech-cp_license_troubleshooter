@@ -352,7 +352,7 @@ sub check_if_hostname_resolves_locally {
 		return;
 	}
 	print_working("Does $LOCAL_HOSTNAME_IP reverse back to $HOSTNAME: ");
-	my $LOCAL_HOSTNAME_REVERSED = qx[ dig \@$mainip -x $LOCAL_HOSTNAME_IP +short 2> /dev/null ];
+	my $LOCAL_HOSTNAME_REVERSED = qx[ dig -x $LOCAL_HOSTNAME_IP +short 2> /dev/null ];
 	chomp($LOCAL_HOSTNAME_REVERSED);
 	chop($LOCAL_HOSTNAME_REVERSED);
 	if ($LOCAL_HOSTNAME_REVERSED eq $HOSTNAME) { 
@@ -658,7 +658,7 @@ sub check_for_cpnat {
 }
 
 sub run_rdate { 
-    return if ($envtype eq "Virtuozzo");
+    return if ($envtype eq "virtuozzo");
     print_working("Running rdate: ");
     system_formatted("rdate -s rdate.cpanel.net");
 }
