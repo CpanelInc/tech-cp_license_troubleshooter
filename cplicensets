@@ -11,7 +11,6 @@ BEGIN {
     unshift @INC, '/usr/local/share/perl5';
     unshift @INC, '/usr/local/lib/perl5/site_perl/5.8.8';
     unshift @INC, '/usr/local/lib/perl5';
-    unshift @INC, '/usr/local/lib/perl5/site_perl/5.8.8/x86_64-linux/DateTime.pm';
     unshift @INC, '/usr/local/lib/perl5/site_perl/5.8.8/IO/Socket/PortState.pm';
 }
 # IN SOME RARE CASES I HAD TO ADD THE ABOVE PATHS OR THE SCRIPT WOULD NOT BE ABLE TO FIND
@@ -20,13 +19,14 @@ BEGIN {
 use strict;
 use Socket;
 use IO::Socket::INET;
+use Time::HiRes qw( clock_gettime CLOCK_REALTIME );
 use Sys::Hostname;
-use Time::Local;
+#use Time::Local;
 use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version="1.11";
+my $version="1.12";
 
 $Term::ANSIColor::AUTORESET = 1;
 $| = 1;
@@ -166,7 +166,7 @@ sub get_external_ip {
 }
 
 sub module_sanity_check {
-    my @required_mods=qw( DateTime IO::Socket::PortState IO::Interface::Simple Data::Validate::IP );
+    my @required_mods=qw( IO::Socket::PortState IO::Interface::Simple Data::Validate::IP );
     my $reqmod;
     print_working("Checking if required Perl Modules are installed:\n");
     foreach $reqmod(@required_mods) {
@@ -448,21 +448,20 @@ sub check_root_servers {
 
 sub get_date { 
     return if ($skipdate);
-	print_working("Checking Date/Time: ");
-    eval("use DateTime");
-	my $servertime = time();
-	chomp($servertime);
-	my $server_dt = DateTime->from_epoch( epoch => $servertime );
-	my $utctime = qx[ curl -s https://cpaneltech.ninja/cptech/date.php 2> /dev/null ];
-	chomp($utctime);
-	my $site_dt = DateTime->from_epoch( epoch => $utctime );
-	my $datediff=$servertime-$utctime;
-	if ($datediff = 0 or $datediff <= 5 or $datediff <= -5) { 
-		print_OK("OK - Server Time: " . $servertime . " / Outside location: " . $utctime . " (Within 5 seconds)");
-	}
-	else { 
-		print_warn("Date is off by more than 5 seconds: This Server: " . $servertime . " / Outside location: " . $utctime);
-	}
+	print_working("Checking Date/Time:\n");
+    my ($servertime)=(split(/\./,clock_gettime(CLOCK_REALTIME)));
+    print BOLD GREEN ON_BLACK "\t \\_ Server Time: " . $servertime . " (" . scalar localtime($servertime) . ")\n";
+    my ($utctime)=(split(/\./,qx[ /usr/bin/curl -s https://cpaneltech.ninja/cgi-bin/date.pl ]));
+    print BOLD GREEN ON_BLACK "\t \\_ Outside Location: " . $utctime . " (" . scalar localtime($utctime) . ")\n";
+    my $timediff=$servertime-$utctime;
+    if ($timediff != 0) { 
+        if ($timediff < -5 or $timediff > 5) { 
+                print_warn("\t \\_ [WARN] - Date/Time is off my more than 5 seconds!");
+        }
+        else {
+                print_OK("\t \\_ [OK] - Date/Time is within 5 seconds!");
+        }
+    }
 }
 
 sub check_auth_cpanel_resolution { 
@@ -582,7 +581,7 @@ sub read_last_50_lines_of_license_log {
         @lines = ();
         $numread = 0;
         seek(F, $filesize - $seekpos, 0);
-        <F> if $seekpos < $filesize; # Discard probably fragmentary line
+        <F> if $seekpos < $filesize; 
         while (defined($line = <F>)) {
             push @lines, $line;
             shift @lines if ++$numread > $lineswanted;
@@ -638,11 +637,17 @@ sub get_mainip {
 
 sub display_route {
 	print_working("Displaying route -n:\n");
+    print BOLD YELLOW "\t \\ \n";
 	system_formatted("route -n");
+	print "\n";
 	print_working("Displaying ip route:\n");
+    print BOLD YELLOW "\t \\ \n";
 	system_formatted("ip route");
+	print "\n";
     print_working("Displaying ip addr show:\n");
+    print BOLD YELLOW "\t \\ \n";
     system_formatted("ip addr show");
+	print "\n";
 }
 
 sub get_wwwacctconf_ip { 
@@ -655,18 +660,65 @@ sub get_wwwacctconf_ip {
 sub check_cron_log { 
 	my $ExistsInCron;
     print_working("Checking for cpkeyclt being run via cron: \n");
-	print "\t \\_ /var/log/cron: ";
-    $ExistsInCron=qx[ grep '\bcpkeyclt\b' /var/log/cron ];
+	print BOLD GREEN ON_BLACK "\t \\_ /var/log/cron: ";
+    $ExistsInCron=qx[ grep 'cpkeyclt' /var/log/cron ];
+	chomp($ExistsInCron);
 	if ($ExistsInCron) { 
 		print_warn("Found in /var/log/cron log file");
 	}
 	else { 
     	print_OK("Not found - Good!");
 	}
-	print "\t \\_ /var/spool/cron/root file: ";
-    $ExistsInCron=qx[ grep '\bcpkeyclt\b' /var/spool/cron/root ];
+	print BOLD GREEN ON_BLACK "\t \\_ /var/spool/cron/root file: ";
+    $ExistsInCron=qx[ grep 'cpkeyclt' /var/spool/cron/root ];
+	chomp($ExistsInCron);
 	if ($ExistsInCron) { 
 		print_warn("Found in roots crontab file");
+	}
+	else { 
+    	print_OK("Not found - Good!");
+	}
+	print BOLD GREEN ON_BLACK "\t \\_ /etc/cron.d/ directory ";
+    $ExistsInCron=qx[ grep -srl 'cpkeyclt' /etc/cron.d/* ];
+	chomp($ExistsInCron);
+	if ($ExistsInCron) { 
+		print_warn("Found in $ExistsInCron file");
+	}
+	else { 
+    	print_OK("Not found - Good!");
+	}
+	print BOLD GREEN ON_BLACK "\t \\_ /etc/cron.hourly/ directory ";
+    $ExistsInCron=qx[ grep -srl 'cpkeyclt' /etc/cron.hourly/* ];
+	chomp($ExistsInCron);
+	if ($ExistsInCron) { 
+		print_warn("Found in $ExistsInCron file");
+	}
+	else { 
+    	print_OK("Not found - Good!");
+	}
+	print BOLD GREEN ON_BLACK "\t \\_ /etc/cron.daily/ directory ";
+    $ExistsInCron=qx[ grep -srl 'cpkeyclt' /etc/cron.daily/* ];
+	chomp($ExistsInCron);
+	if ($ExistsInCron) { 
+		print_warn("Found in $ExistsInCron file");
+	}
+	else { 
+    	print_OK("Not found - Good!");
+	}
+	print BOLD GREEN ON_BLACK "\t \\_ /etc/cron.weekly/ directory ";
+    $ExistsInCron=qx[ grep -srl 'cpkeyclt' /etc/cron.weekly/* ];
+	chomp($ExistsInCron);
+	if ($ExistsInCron) { 
+		print_warn("Found in $ExistsInCron file");
+	}
+	else { 
+    	print_OK("Not found - Good!");
+	}
+	print BOLD GREEN ON_BLACK "\t \\_ /etc/cron.monthly/ directory ";
+    $ExistsInCron=qx[ grep -srl 'cpkeyclt' /etc/cron.monthly/* ];
+	chomp($ExistsInCron);
+	if ($ExistsInCron) { 
+		print_warn("Found in $ExistsInCron file");
 	}
 	else { 
     	print_OK("Not found - Good!");
@@ -676,8 +728,8 @@ sub check_cron_log {
 sub check_for_cpnat { 
     print_working("Checking for existence of cpnat file (1:1 NAT): ");
     if (-e("/var/cpanel/cpnat")) { 
-        print_OK("Found one");
-	    print BOLD YELLOW "\t \\_ Contents of /var/cpanel/cpnat file:\n";
+        print_OK("Found one - contents are:");
+	    print BOLD YELLOW "\t \\ \n";
 	    system_formatted("cat /var/cpanel/cpnat");
         print "\n";
     }
