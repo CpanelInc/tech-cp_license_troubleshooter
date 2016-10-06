@@ -26,7 +26,7 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version="1.12";
+my $version="1.13";
 
 $Term::ANSIColor::AUTORESET = 1;
 $| = 1;
@@ -246,6 +246,11 @@ sub alltrim() {
 }
 
 sub get_devices {
+    # TRY THIS NEXT TIME! 
+    # 
+    # my @DEVICES = qx[ ip -o link show | awk -F': ' '{print $2}' ]; 
+    # foreach $device(@devices) { 
+    # 
 	my $device;
 	print_working("Obtaining devices:\n");
 	opendir(NICS,"/sys/class/net");
@@ -752,7 +757,7 @@ sub run_rdate {
 
 sub check_iptables { 
     print_working("Checking if cPanel IP's (208.74.x.x) are blocked: ");
-    my $IPTABLES_CHK=qx[ iptables -L -n | grep '208.74.' ];
+    my $IPTABLES_CHK=qx[ iptables -L -n | grep '208.74.' | grep DROP ];
     if ($IPTABLES_CHK) { 
         print_warn("cPanel IP's may be blocked (IPTABLES)");
     }
