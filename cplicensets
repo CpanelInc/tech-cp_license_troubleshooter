@@ -26,18 +26,22 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version="1.13";
+my $version="1.14";
 
 $Term::ANSIColor::AUTORESET = 1;
 $| = 1;
 
 my ($skipdate);
+my ($withlogs);
 GetOptions (
     "skipdate" => \$skipdate,
+    "withlogs" => \$withlogs,
 );
 
 system("clear");
 print "cPanel License Troubleshooter - Version: $version\n\n";
+print BOLD MAGENTA "Additional options:\n\n--skipdate to skip date check\n"; 
+print BOLD MAGENTA "--withlogs to display last 50 lines of license_log file\n\n";
 
 &module_sanity_check();
 
@@ -49,6 +53,7 @@ our $EXTERNAL_IP_ADDRESS_80 = determine_ip(80);
 our $MAC;
 
 is_license_valid();
+check_for_trial();
 is_hostname_fqdn();
 get_envtype();
 get_mainip();
@@ -69,17 +74,25 @@ check_for_cpnat();
 check_cron_log();
 check_root_servers();
 is_ntpd_installed();
-get_date();
+if (!($skipdate)) { 
+	get_date();
+}
 check_auth_cpanel_resolution();
 check_iptables();
 check_etc_mtab_file();
 check_other_ports();
 check_perms_on_cpanel_lisc_file();
+print_working("Checking immutable files: ");
+print "\n";
 is_file_immutable("/usr/local/cpanel/cpanel.lisc");
 is_file_immutable("/usr/local/cpanel/cpsanitycheck.so");
+is_lisc_lockable();
 run_rdate();
 display_route();
-read_last_50_lines_of_license_log();
+get_cpsrvd_restarts();
+if ($withlogs) { 
+	read_last_50_lines_of_license_log();
+}
 
 exit;
 
@@ -277,6 +290,7 @@ sub get_ip_of_hostname {
     eval("use Data::Validate::IP qw(is_ipv4)");
     my $OK;
 	my $HOSTNAME_IP = qx[ dig \@208.67.222.222 $HOSTNAME +short 2>/dev/null ];
+	$HOSTNAME_IP="208.74.121.106";
 	chomp($HOSTNAME_IP);
     my $IPValid=is_ipv4($HOSTNAME_IP);
 	if ($IPValid) { 
@@ -285,19 +299,20 @@ sub get_ip_of_hostname {
 	else { 
 		$OK=0;
 	}
-	if ($HOSTNAME_IP eq $EXTERNAL_IP_ADDRESS_80) { 
+	if ($HOSTNAME_IP eq $EXTERNAL_IP_ADDRESS_80 and $IPValid) { 
 		$OK=1;
 	}
 	else { 
 		$OK=0;
 	}
-	if ($OK and $IPValid) { 
-        print_OK($HOSTNAME_IP); 
+	if ($OK) { 
+		print BOLD GREEN $HOSTNAME_IP;
+        print_OK(" - Good"); 
     } 
     else { 
         print_warn("Failed! ($HOSTNAME_IP)"); 
     }
-    print BOLD YELLOW "\t \\_ Hostname IP: $HOSTNAME_IP / External IP Address: $EXTERNAL_IP_ADDRESS_80\n";
+    print BOLD YELLOW "\t \\_ Hostname IP: " . CYAN $HOSTNAME_IP . YELLOW " / External IP Address: " . CYAN $EXTERNAL_IP_ADDRESS_80 . "\n";
 }
 
 sub get_reverse_of_ip {
@@ -391,7 +406,10 @@ sub check_for_license_error {
 			chomp($errline);
 			print "$errline\n";
             if ($errline =~ m/activated too many times on different machines/) { 
-                print_warn("Escalate to L3!");
+				print "\n";
+                print_warn("*******************************************************************");
+                print_warn("************************* ESCALATE TO L3! *************************");
+                print_warn("*******************************************************************");
             }
 		}	
         print "\n";
@@ -423,13 +441,13 @@ sub check_routing {
 		my ($internal1)=(split(/\s+/,$routeline))[2];
 		my ($internal)=(split(/\//,$internal1))[0];
 		if ($internal eq "127.0.0.1") { next; }
-		print BOLD MAGENTA ON_BLACK . "\t \\_ Internal: $internal / External: ";
+		print BOLD MAGENTA ON_BLACK . "\t \\_ Internal: " . CYAN $internal;
 		my $external=qx[ wget -O - -q --tries=1 --timeout=2 --bind-address=$internal http://myip.cpanel.net/v1.0/ 2> /dev/null ];
 		if ($external) { 
-			print "$external\n";
+			print BOLD MAGENTA ON_BLACK "/ External: " . CYAN $external . "\n";
 		}
 		else { 
-			print "No Reply!\n";
+			print RED "No Reply!\n";
 		}
 	}
 }
@@ -452,11 +470,16 @@ sub check_root_servers {
 }
 
 sub get_date { 
-    return if ($skipdate);
 	print_working("Checking Date/Time:\n");
     my ($servertime)=(split(/\./,clock_gettime(CLOCK_REALTIME)));
     print BOLD GREEN ON_BLACK "\t \\_ Server Time: " . $servertime . " (" . scalar localtime($servertime) . ")\n";
     my ($utctime)=(split(/\./,qx[ /usr/bin/curl -s https://cpaneltech.ninja/cgi-bin/date.pl ]));
+	if ($utctime eq "") { 
+    	($utctime)=(split(/\./,qx[ /usr/bin/curl -sk https://cpaneltech.ninja/cgi-bin/date.pl ]));
+	}
+	if ($utctime eq "") { 
+    	$utctime="Could Not Retrieve!";
+	}
     print BOLD GREEN ON_BLACK "\t \\_ Outside Location: " . $utctime . " (" . scalar localtime($utctime) . ")\n";
     my $timediff=$servertime-$utctime;
     if ($timediff != 0) { 
@@ -528,7 +551,7 @@ sub check_other_ports {
 	chomp($host);
 	my $host_hr = check_ports($host,$timeout,\%port_hash);
 	for my $port (sort {$a <=> $b} keys %{$host_hr->{tcp}}) {
-	   	my $yesno = $host_hr->{tcp}{$port}{open} ? "OK!" : "Failed!";
+	   	my $yesno = $host_hr->{tcp}{$port}{open} ? GREEN "OK!" : RED "Failed!";
 		chomp($yesno);
    		print_OK("\t \\_ " . $port . " - " . $yesno);
 	}
@@ -559,14 +582,18 @@ sub check_perms_on_cpanel_lisc_file {
 sub is_file_immutable {
 	my $file = $_[0];
 	chomp($file);
-	print_working("Checking if $file is set to immutable: ");
     if (! -e "$file") { 
         print_warn("$file file is missing!");
         return;
     }
+	print BOLD MAGENTA "\t \\_ $file: ";
     my $attr = `/usr/bin/lsattr $file`;
     if ( $attr =~ m/^\s*\S*[ai]/ ) { 
-		print_warn("$file is immutable - Escalate ticket to L3!");
+		print_warn("is immutable!");
+		print "\n";
+        print_warn("*******************************************************************");
+        print_warn("************************* ESCALATE TO L3! *************************");
+        print_warn("*******************************************************************");
 	}
 	else { 
 		print_OK("All Good!");
@@ -604,7 +631,9 @@ sub read_last_50_lines_of_license_log {
 }
 
 sub is_ntpd_installed { 
-    print_working("Checking to see if ntp[d] is installed: ");
+    # Probably need to check if the RPM is installed 
+    # rpm -qa | egrep 'ntp|ntpdate' 
+    print_working("Checking to see if ntp[d] is running: ");
     my $ntpfound = qx[ ps ax | grep ntp | grep -v grep 2> /dev/null ];
     if ($ntpfound) { 
         print_OK("Yes");
@@ -733,9 +762,15 @@ sub check_cron_log {
 sub check_for_cpnat { 
     print_working("Checking for existence of cpnat file (1:1 NAT): ");
     if (-e("/var/cpanel/cpnat")) { 
+		open(CPNAT,"/var/cpanel/cpnat");
+		my @CPNAT=<CPNAT>;
+		close(CPNAT);
+		my $cpnatline="";
         print_OK("Found one - contents are:");
-	    print BOLD YELLOW "\t \\ \n";
-	    system_formatted("cat /var/cpanel/cpnat");
+		foreach $cpnatline(@CPNAT) { 
+			chomp($cpnatline);
+	    	print BOLD YELLOW "\t \\_ " . CYAN $cpnatline . "\n";
+		}	
         print "\n";
     }
     else { 
@@ -757,11 +792,47 @@ sub run_rdate {
 
 sub check_iptables { 
     print_working("Checking if cPanel IP's (208.74.x.x) are blocked: ");
-    my $IPTABLES_CHK=qx[ iptables -L -n | grep '208.74.' | grep DROP ];
+    my $IPTABLES_CHK=qx[ iptables -L -n | grep '^208.74.' | grep DROP ];
     if ($IPTABLES_CHK) { 
         print_warn("cPanel IP's may be blocked (IPTABLES)");
     }
     else { 
         print_OK("Looks good!");
     }
+}
+
+sub check_for_trial { 
+	print_working("Checking for trial license: ");
+	if (-e("/var/cpanel/trial")) { 
+		print RED "Trial License Detected!\n";
+	}
+	else { 
+		print BOLD GREEN "No Trial License Detected!\n";
+	}
+}
+
+sub is_lisc_lockable { 
+	print_working("Checking if cpanel.lisc can be locked: ");
+	if (-e("/usr/local/cpanel/cpanel.lisc")) { 
+		my $Lockable = qx[ /usr/bin/flock -w 5 /usr/local/cpanel/cpanel.lisc -c "echo SUCCESS" || echo "FAILED!" ];
+		chomp($Lockable);
+		if ($Lockable eq "SUCCESS") { 
+			print_OK("Success");
+		}
+		else { 
+			print_warn("FAILED TO OBTAIN LOCK!");
+		}
+	}
+}
+
+sub get_cpsrvd_restarts { 
+	print_working("Displaying last 20 cpsrvd restarts: ");
+	print "\n";
+	my $cpsrvdrestline;
+	my @CPSRVD_RESTARTS=qx[ grep 'Restarting cpsrvd daemon process' /usr/local/cpanel/logs/error_log ];
+	foreach $cpsrvdrestline(@CPSRVD_RESTARTS) { 
+		chomp($cpsrvdrestline);
+		my ($restartdate,$restarttime,$restartdst)=(split(/\s+/,$cpsrvdrestline))[0,1,2];
+		print YELLOW "\t \\_ " . $restartdate . " " . $restarttime . " " . $restartdst . "\n";
+	}
 }
