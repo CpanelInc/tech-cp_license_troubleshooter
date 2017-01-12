@@ -26,7 +26,7 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version = "1.15";
+my $version = "1.16";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -323,7 +323,6 @@ sub get_ip_of_hostname {
     eval("use Data::Validate::IP qw(is_ipv4)");
     my $OK;
     my $HOSTNAME_IP = qx[ dig \@208.67.222.222 $HOSTNAME +short 2>/dev/null ];
-    $HOSTNAME_IP = "208.74.121.106";
     chomp($HOSTNAME_IP);
     my $IPValid = is_ipv4($HOSTNAME_IP);
     if ($IPValid) {
