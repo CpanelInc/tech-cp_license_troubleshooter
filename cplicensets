@@ -14,8 +14,9 @@ BEGIN {
     unshift @INC, '/usr/local/lib/perl5/site_perl/5.8.8/IO/Socket/PortState.pm';
 }
 
-# IN SOME RARE CASES I HAD TO ADD THE ABOVE PATHS OR THE SCRIPT WOULD NOT BE ABLE TO FIND
-# THE REQUIRED MODULES.  IT'S UGLY I KNOW BUT IS THE ONLY WAY I COULD GET THIS TO WORK!
+# IN SOME RARE CASES (mostly CentOS 5) I HAD TO ADD THE ABOVE PATHS OR THE SCRIPT WOULD NOT 
+# BE ABLE TO FIND THE REQUIRED MODULES.  IT'S UGLY I KNOW BUT IS THE ONLY WAY I COULD GET THIS 
+# TO WORK!
 
 use strict;
 use Socket;
@@ -26,7 +27,7 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version = "1.16";
+my $version = "1.17";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -70,6 +71,7 @@ check_file_for_odd_chars("/etc/sysconfig/network");
 check_if_hostname_resolves_locally();
 check_for_license_error();
 get_hostname_at_install();
+check_for_hostname_changes();
 check_routing();
 check_for_cpnat();
 check_cron_log();
@@ -84,12 +86,15 @@ check_iptables();
 check_etc_mtab_file();
 check_other_ports();
 check_perms_on_cpanel_lisc_file();
-print_working("Checking immutable files: ");
-print "\n";
-is_file_immutable("/usr/local/cpanel/cpanel.lisc");
-is_file_immutable("/usr/local/cpanel/cpsanitycheck.so");
-is_lisc_lockable();
+if (-e("/usr/local/cpanel/cpanel.lisc" or (-e("/usr/local/cpanel/cpsanitycheck.so")))) { 
+    print_working("Checking immutable files: ");
+    print "\n";
+    is_file_immutable("/usr/local/cpanel/cpanel.lisc");
+    is_file_immutable("/usr/local/cpanel/cpsanitycheck.so");
+    is_lisc_lockable();
+}
 run_rdate();
+arping_check();
 display_route();
 get_cpsrvd_restarts();
 
@@ -142,15 +147,19 @@ sub is_license_valid {
 
     if ( $buffer =~ m/active<br\/>/ ) {
         print_OK("Active!");
-        # RIGHT HERE
-        my ($license_expires_on) = (
-            split(
-                /\s+/,
-    qx[ strings /usr/local/cpanel/cpanel.lisc | grep license_expire_time ]
-            )
-        )[1];
-        print BOLD YELLOW "License File Expires On: "
-        . GREEN scalar localtime($license_expires_on) . "\n";
+        if (-e("/usr/local/cpanel/cpanel.lisc")) { 
+            my ($license_expires_on) = (
+                split(
+                    /\s+/,
+        qx[ strings /usr/local/cpanel/cpanel.lisc | grep license_expire_time ]
+                )
+            )[1];
+            print BOLD YELLOW "License File Expires On: "
+            . GREEN scalar localtime($license_expires_on) . "\n";
+        }
+        else { 
+            print_warn("cpanel.lisc file is missing!");
+        }
         return;
     }
     if ( $buffer =~ m/expired on<br\/>/ ) {
@@ -286,15 +295,7 @@ sub get_devices {
     my $device;
     my $deviceline;
     print_working("Obtaining NIC Devices:\n");
-
-    #	opendir(NICS,"/sys/class/net");
-    #	my @DEVICES=readdir(NICS);
-    #	closedir(NICS);
     my @DEVICES = qx[ ip -o link show ];
-
-    #	foreach $device(@DEVICES) {
-    #		chomp($device);
-    #		if ($device eq "." or $device eq ".." or $device eq "lo") { next; }
     foreach $deviceline (@DEVICES) {
         chomp($deviceline);
         ($device) = ( split( /\s+/, $deviceline ) )[1];
@@ -478,6 +479,24 @@ qx[ grep 'Validating that the system hostname' /var/log/cpanel-install.log | cut
     }
     else {
         print_OK($HOSTNAME_AT_INSTALL);
+    }
+}
+
+sub check_for_hostname_changes {
+    print_working("Checking access_log for hostname changes: \n");
+    my $allhostnames;
+    my $hostname_change;
+    my $hostname_date_change1;
+    my $hostname_date_change2;
+    my @all_hostnames = qx[ grep 'dochangehostname?hostname' /usr/local/cpanel/logs/access_log ];
+    foreach $allhostnames(@all_hostnames) { 
+        chomp($allhostnames);
+        ($hostname_change)=(split(/\s+/,$allhostnames))[6];
+        ($hostname_date_change1,$hostname_date_change2)=(split(/\s+/,$allhostnames))[3,4];
+        ($hostname_change)=(split(/=/,$hostname_change))[1];
+        if ($hostname_change) { 
+            print YELLOW "\t \\_ Changed to: " . BOLD GREEN $hostname_change . YELLOW " on " . BOLD GREEN $hostname_date_change1 . " " . $hostname_date_change2 . "\n";
+        }
     }
 }
 
@@ -915,4 +934,17 @@ qx[ grep 'Restarting cpsrvd daemon process' /usr/local/cpanel/logs/error_log ];
           . $restarttime . " "
           . $restartdst . "\n";
     }
+}
+
+sub arping_check { 
+    return if ( $envtype eq "virtuozzo" );
+    print_working("Checking for multiple devices/servers responding to $EXTERNAL_IP_ADDRESS_80: ");
+    my $ARPINGCMD = qx[ arping -D -c 2 $EXTERNAL_IP_ADDRESS_80 | grep 'Received 0' ];
+	chomp($ARPINGCMD);
+    if ($ARPINGCMD =~ m/Received 0/) { 
+        print_OK("Good! - None found!"); 
+	}
+	else { 
+        print_warn("\n\t \\_ $EXTERNAL_IP_ADDRESS_80 may be listening on another device/machine! ($ARPINGCMD)");
+	}
 }
