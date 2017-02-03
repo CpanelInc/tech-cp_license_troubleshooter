@@ -27,7 +27,7 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version = "1.17";
+my $version = "1.18";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -94,7 +94,6 @@ if (-e("/usr/local/cpanel/cpanel.lisc" or (-e("/usr/local/cpanel/cpsanitycheck.s
     is_lisc_lockable();
 }
 run_rdate();
-arping_check();
 display_route();
 get_cpsrvd_restarts();
 
@@ -299,23 +298,26 @@ sub get_devices {
     foreach $deviceline (@DEVICES) {
         chomp($deviceline);
         ($device) = ( split( /\s+/, $deviceline ) )[1];
-        chop($device);
+        chop($device);  ## Remove trailing colon
         if ( $device eq "lo" ) { next; }
-        my $if = IO::Interface::Simple->new($device);
-        print BOLD MAGENTA ON_BLACK
-          . "\t \\_ Ethernet Device Name: "
-          . CYAN $device . "\n";
-        print BOLD YELLOW . "\t\t \\_ Address: " . CYAN $if->address . "\n";
-        print BOLD YELLOW . "\t\t \\_ MAC: " . CYAN $if->hwaddr . "\n";
-        print BOLD YELLOW . "\t\t \\_ Broadcast: " . CYAN $if->broadcast . "\n";
-        print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n";
-        print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n";
-
-        if ( $device eq "eth0" and $if->address eq "" ) {
-            print_warn(
-"Device eth0 has no address - Seeing Waiting for devices to settle errors?"
-            );
-        }
+		if (-e("/etc/sysconfig/network-scripts/ifcfg-$device")) { 	
+       		my $if = IO::Interface::Simple->new($device);
+       		print BOLD MAGENTA ON_BLACK
+       			. "\t \\_ Ethernet Device Name: "
+       			. CYAN $device . "\n";
+       		print BOLD YELLOW . "\t\t \\_ Address: " . CYAN $if->address . "\n";
+       		print BOLD YELLOW . "\t\t \\_ MAC: " . CYAN $if->hwaddr . "\n";
+       		print BOLD YELLOW . "\t\t \\_ Broadcast: " . CYAN $if->broadcast . "\n";
+       		print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n";
+       		print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n";
+			arping_check($device);
+			check_for_multiple_defroute($device);
+       		if ( $device eq "eth0" and $if->address eq "" ) {
+           		print_warn(
+"Device eth0 has no address - Seeing Waiting for devices to settle errors in license_log?"
+       		);
+			}
+		}
     }
 }
 
@@ -513,10 +515,10 @@ sub check_routing {
         my $external =
 qx[ wget -O - -q --tries=1 --timeout=2 --bind-address=$internal http://myip.cpanel.net/v1.0/ 2> /dev/null ];
         if ($external) {
-            print BOLD MAGENTA ON_BLACK "/ External: " . CYAN $external . "\n";
+            print BOLD MAGENTA ON_BLACK " / External: " . CYAN $external . "\n";
         }
         else {
-            print RED "No Reply!\n";
+            print RED " / No Reply!\n";
         }
     }
 }
@@ -937,14 +939,27 @@ qx[ grep 'Restarting cpsrvd daemon process' /usr/local/cpanel/logs/error_log ];
 }
 
 sub arping_check { 
+	my $nicdevice=$_[0];
     return if ( $envtype eq "virtuozzo" );
-    print_working("Checking for multiple devices/servers responding to $EXTERNAL_IP_ADDRESS_80: ");
-    my $ARPINGCMD = qx[ arping -D -c 2 $EXTERNAL_IP_ADDRESS_80 | grep 'Received 0' ];
+    print_working("Checking $nicdevice for multiple devices responding to $EXTERNAL_IP_ADDRESS_80: ");
+    my $ARPINGCMD = qx[ arping -D -I $nicdevice -c 2 $EXTERNAL_IP_ADDRESS_80 | grep 'Received 0' ];
 	chomp($ARPINGCMD);
     if ($ARPINGCMD =~ m/Received 0/) { 
         print_OK("Good! - None found!"); 
 	}
 	else { 
-        print_warn("\n\t \\_ $EXTERNAL_IP_ADDRESS_80 may be listening on another device/machine! ($ARPINGCMD)");
+        print_warn("\n\t \\_ $EXTERNAL_IP_ADDRESS_80 may be listening on other devices! ($ARPINGCMD)");
+	}
+}
+
+sub check_for_multiple_defroute { 
+	my $nicdevice=$_[0];
+    print_working("Checking $nicdevice for multiple DEFROUTE=yes lines: ");
+	my $defroutecnt = qx[ grep -c '^DEFROUTE=yes' /etc/sysconfig/network-scripts/ifcfg-$nicdevice ];
+	if ($defroutecnt > 1) { 
+        print_warn("\n\t \\_ Multiple DEFROUTE=yes lines found in /etc/sysconfig/network-scripts/ifcfg-$nicdevice");
+	}	
+	else {
+        print_OK("Only 1 found - GOOD!"); 
 	}
 }
