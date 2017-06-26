@@ -27,7 +27,7 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version = "1.18";
+my $version = "1.19";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -61,6 +61,7 @@ get_envtype();
 get_mainip();
 get_wwwacctconf_ip();
 get_devices();
+run_check_valid_server_hostname();
 check_kernel_hostname();
 display_etc_hostname();
 get_network_hostname();
@@ -69,15 +70,16 @@ get_reverse_of_ip();
 check_file_for_odd_chars("/etc/hosts");
 check_file_for_odd_chars("/etc/sysconfig/network");
 check_if_hostname_resolves_locally();
+check_for_cloudcfg();
 check_for_license_error();
 get_hostname_at_install();
 check_for_hostname_changes();
+check_for_cpkeyclt_from_cli();
 check_routing();
 check_for_cpnat();
 check_cron_log();
 check_root_servers();
 is_ntpd_installed();
-
 if ( !($skipdate) ) {
     get_date();
 }
@@ -153,8 +155,14 @@ sub is_license_valid {
         qx[ strings /usr/local/cpanel/cpanel.lisc | grep license_expire_time ]
                 )
             )[1];
+
+			my $timenow=time();
             print BOLD YELLOW "License File Expires On: "
-            . GREEN scalar localtime($license_expires_on) . "\n";
+            . GREEN scalar localtime($license_expires_on);
+			if ($timenow > $license_expires_on) { 
+				print_warn(" EXPIRED!");
+			}
+			print "\n";	
         }
         else { 
             print_warn("cpanel.lisc file is missing!");
@@ -300,7 +308,7 @@ sub get_devices {
         ($device) = ( split( /\s+/, $deviceline ) )[1];
         chop($device);  ## Remove trailing colon
         if ( $device eq "lo" ) { next; }
-		if (-e("/etc/sysconfig/network-scripts/ifcfg-$device")) { 	
+		if (-e("/etc/sysconfig/network-scripts/ifcfg-$device")) {
        		my $if = IO::Interface::Simple->new($device);
        		print BOLD MAGENTA ON_BLACK
        			. "\t \\_ Ethernet Device Name: "
@@ -317,6 +325,7 @@ sub get_devices {
 "Device eth0 has no address - Seeing Waiting for devices to settle errors in license_log?"
        		);
 			}
+			check_for_dhcp($device);
 		}
     }
 }
@@ -345,12 +354,23 @@ sub get_ip_of_hostname {
         print_OK(" - Good");
     }
     else {
-        print_warn("Failed! ($HOSTNAME_IP)");
+		  if ($HOSTNAME_IP) { 
+				print_warn("Failed! ($HOSTNAME_IP)");
+		  }
+		  else { 
+				print_warn("Failed! (NXDOMAIN)");
+		  }
     }
     print BOLD YELLOW "\t \\_ Hostname IP: "
       . CYAN $HOSTNAME_IP
       . YELLOW " / External IP Address: "
-      . CYAN $EXTERNAL_IP_ADDRESS_80 . "\n";
+      . CYAN $EXTERNAL_IP_ADDRESS_80 ;
+	if ($HOSTNAME_IP ne $EXTERNAL_IP_ADDRESS_80) { 
+		print RED " [WARN]\n";
+	}
+	else { 
+		print GREEN " [OK]\n";
+	}
 }
 
 sub get_reverse_of_ip {
@@ -487,19 +507,56 @@ qx[ grep 'Validating that the system hostname' /var/log/cpanel-install.log | cut
 sub check_for_hostname_changes {
     print_working("Checking access_log for hostname changes: \n");
     my $allhostnames;
+	my $histline;
+	my @HOSTNAME_CHANGES;
+	my $histchange;
     my $hostname_change;
     my $hostname_date_change1;
     my $hostname_date_change2;
-    my @all_hostnames = qx[ grep 'dochangehostname?hostname' /usr/local/cpanel/logs/access_log ];
-    foreach $allhostnames(@all_hostnames) { 
+    my @accesslog_hostnames = qx[ grep 'dochangehostname?hostname' /usr/local/cpanel/logs/access_log ];
+	my $alhostcnt=@accesslog_hostnames;
+	if ($alhostcnt == 0) { 
+		print BOLD CYAN "\t \\_ None Found.\n"; 
+	}
+    foreach $allhostnames(@accesslog_hostnames) { 
         chomp($allhostnames);
         ($hostname_change)=(split(/\s+/,$allhostnames))[6];
         ($hostname_date_change1,$hostname_date_change2)=(split(/\s+/,$allhostnames))[3,4];
         ($hostname_change)=(split(/=/,$hostname_change))[1];
         if ($hostname_change) { 
-            print YELLOW "\t \\_ Changed to: " . BOLD GREEN $hostname_change . YELLOW " on " . BOLD GREEN $hostname_date_change1 . " " . $hostname_date_change2 . "\n";
+            print YELLOW "\t \\_ Changed to: " . BOLD GREEN $hostname_change . YELLOW " on " . BOLD GREEN $hostname_date_change1 . " " . $hostname_date_change2 . "\n" unless($hostname_change eq "1");
         }
     }
+	print_working("Checking /root/.bash_history for hostname changes: \n");
+	open(HIST,"/root/.bash_history");
+	my @HISTORY=<HIST>;
+	close(HIST);
+	foreach $histline(@HISTORY) { 
+		chomp($histline);
+		if ($histline =~ m/\/usr\/local\/cpanel\/bin\/set_hostname /) { 
+            print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n" unless($histline =~ m/grep/);
+		}
+		if ($histline =~ m/hostnamectl set-hostname/) { 
+            print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n" unless($histline =~ m/grep/ or $histline =~ m/set_hostname/);
+		}
+		if ($histline =~ m/hostname /) { 
+            print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n" unless($histline =~ m/grep/ or $histline =~ m/set_hostname/ or $histline =~ m/set-hostname/);
+		}
+	}
+}
+
+sub check_for_cpkeyclt_from_cli { 
+	my $histline;
+	print_working("Checking /root/.bash_history for cpkeyclt \n");
+	open(HIST,"/root/.bash_history");
+	my @HISTORY=<HIST>;
+	close(HIST);
+	foreach $histline(@HISTORY) { 
+		chomp($histline);
+		if ($histline =~ m/cpkeyclt /) { 
+            print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n";
+		}
+	}	
 }
 
 sub check_routing {
@@ -926,7 +983,7 @@ sub get_cpsrvd_restarts {
     print "\n";
     my $cpsrvdrestline;
     my @CPSRVD_RESTARTS =
-qx[ grep 'Restarting cpsrvd daemon process' /usr/local/cpanel/logs/error_log ];
+qx[ grep 'Restarting cpsrvd daemon process' /usr/local/cpanel/logs/error_log | tail -20 ];
     foreach $cpsrvdrestline (@CPSRVD_RESTARTS) {
         chomp($cpsrvdrestline);
         my ( $restartdate, $restarttime, $restartdst ) =
@@ -936,6 +993,17 @@ qx[ grep 'Restarting cpsrvd daemon process' /usr/local/cpanel/logs/error_log ];
           . $restarttime . " "
           . $restartdst . "\n";
     }
+    print_working("Checking /root/.bash_history for restarts: \n");
+	my $histline;
+	open(HIST,"/root/.bash_history");
+	my @HISTORY=<HIST>;
+	close(HIST);
+	foreach $histline(@HISTORY) { 
+		chomp($histline);
+		if ($histline =~ m/cpanel.service/ or $histline =~ m/scripts\/restartsrv_cpsrvd/ or $histline =~ m/service cpanel restart/ or $histline =~ m/etc\/init.d\/cpanel/) { 
+            print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n" unless($histline =~ m/grep/);
+		}
+	}
 }
 
 sub arping_check { 
@@ -963,3 +1031,53 @@ sub check_for_multiple_defroute {
         print_OK("Only 1 found - GOOD!"); 
 	}
 }
+
+sub run_check_valid_server_hostname { 
+    print_working("Checking For Valid Server Hostname: ");
+	my $cfvsh_stat=qx[ /usr/local/cpanel/scripts/check_valid_server_hostname ];
+	chomp($cfvsh_stat);
+	if ($cfvsh_stat eq "OK") { 
+		print_OK("OK");
+	}
+	else { 
+		print_warn($cfvsh_stat);
+	}
+}
+
+sub check_for_dhcp { 
+	my $nicdevice=$_[0];
+    print_working("Checking Networking Configs For DHCP \n");
+	my $grep4dhcp=qx[ grep -i 'dhcp' /etc/sysconfig/network-scripts/ifcfg-$nicdevice ];
+	if ($grep4dhcp) { 
+		print_warn( "\t \\_  " . $nicdevice . " has DHCP config - can cause IP/Hostname to change automatically!");
+	}	
+	else {
+		print_OK(" None Found!");
+	}
+	
+}
+
+sub check_for_cloudcfg {
+    print_working("Checking for /etc/cloud/cloud.cfg.d/");
+	return if (!(-e("/etc/cloud")));
+	print BOLD GREEN " - Found!\n";
+	if (-e("/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg")) { 
+		print_OK("99-preserve-hostname.cfg is present");
+		return;
+	}
+	my $preserve_hostname = qx[ grep -srl 'preserve_hostname: true' /etc/cloud/* ];
+	my $manageetchosts = qx[ grep -srl 'manage_etc_hosts: false' /etc/cloud/* ];
+	if ($preserve_hostname) { 
+		print_OK("\t \\_ preserve_hostname true!");
+	}
+	else { 
+		print_warn("\t \\_ preserve_hostname not set! in /etc/cloud/cloud.cfg.d/");
+	}
+	if ($manageetchosts) { 
+		print_OK("\t \\_ manage_etc_hosts false!");
+	}
+	else { 
+		print_warn("\t \\_ manage_etc_hosts not set! in /etc/cloud/cloud.cfg.d/");
+	}
+}
+
