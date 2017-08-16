@@ -583,6 +583,7 @@ sub check_for_cpkeyclt_from_cli {
 			push(@cpkeycltINHist, "\t \\_ " . BOLD GREEN scalar localtime($histtime) . " - " . $histline);
 		}
 	}	
+    my $cpkeyInHistLine;
 	if (@cpkeycltINHist) { 
         foreach $cpkeyInHistLine(@cpkeycltINHist) { 
             chomp($cpkeyInHistLine);
