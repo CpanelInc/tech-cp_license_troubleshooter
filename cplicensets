@@ -584,7 +584,10 @@ sub check_for_cpkeyclt_from_cli {
 		}
 	}	
 	if (@cpkeycltINHist) { 
-		print "@cpkeycltINHist\n";
+        foreach $cpkeyInHistLine(@cpkeycltINHist) { 
+            chomp($cpkeyInHistLine);
+		    print "$cpkeyInHistLine\n";
+        }
 	}
 	else { 
 		print BOLD CYAN "\t \\_ None\n"; 
