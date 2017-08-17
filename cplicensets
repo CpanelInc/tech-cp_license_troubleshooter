@@ -1190,7 +1190,6 @@ sub check_for_solo {
     }
 	my $isSolo="No";
 	my ($isSoloNum)=(split(/\s+/,qx[ strings /usr/local/cpanel/cpanel.lisc | grep maxusers ]))[1];
-	$isSoloNum=1;
 	if ($isSoloNum == 1) { 
 		$isSolo="Yes - Note: Only 1 account can be listed in /etc/trueuserdomains!";
 	}
