@@ -27,23 +27,27 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version = "1.20";
+my $version = "1.21";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
 
 my ($skipdate);
 my ($withlogs);
+my ($verifypage);
 GetOptions(
     "skipdate" => \$skipdate,
     "withlogs" => \$withlogs,
+    "verifypage" => \$verifypage,
 );
 
 system("clear");
+print "<c>\n";
 print "cPanel License Troubleshooter - Version: $version\n\n";
-print BOLD MAGENTA "Additional options:\n\n--skipdate to skip date check\n";
+print BOLD MAGENTA "Additional options:\n\n--skipdate skips date check\n";
 print BOLD MAGENTA
-  "--withlogs to display last 50 lines of license_log file\n\n";
+  "--withlogs displays last 50 lines of license_log file\n";
+print BOLD MAGENTA "--verifypage show verify.cpanel.net page in JSON format.\n\n";
 
 &module_sanity_check();
 
@@ -76,6 +80,7 @@ check_for_license_error();
 get_hostname_at_install();
 check_for_hostname_changes();
 check_for_cpkeyclt_from_cli();
+getHist();
 check_routing();
 check_for_cpnat();
 check_cron_log();
@@ -99,12 +104,16 @@ if (-e("/usr/local/cpanel/cpanel.lisc" or (-e("/usr/local/cpanel/cpsanitycheck.s
 run_rdate();
 display_route();
 get_cpsrvd_restarts();
-getVerifyJSON();
+# Add reboots here
+if ($verifypage) { 
+	getVerifyJSON();
+}
 
 if ($withlogs) {
     read_last_50_lines_of_license_log();
 }
 
+print "</c>\n";
 exit;
 
 sub determine_ip {
@@ -552,16 +561,21 @@ sub check_for_hostname_changes {
 	open(HIST,"/root/.bash_history");
 	my @HISTORY=<HIST>;
 	close(HIST);
+	my @hostchangeHist;
+	my $histtime;
 	foreach $histline(@HISTORY) { 
 		chomp($histline);
+		if (substr($histline,0,1) eq "#") { 
+			$histtime=substr($histline,1);
+		}
 		if ($histline =~ m/\/usr\/local\/cpanel\/bin\/set_hostname /) { 
-            print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n" unless($histline =~ m/grep|vim \/etc\/hostname|vi \/etc\/hostname|rm/);
+            print YELLOW "\t \\_ On " . BOLD GREEN scalar localtime($histtime) . " - " . $histline . "\n" unless($histline =~ m/grep|vim \/etc\/hostname|vi \/etc\/hostname|rm/);
 		}
 		if ($histline =~ m/hostnamectl set-hostname/) { 
-            print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n" unless($histline =~ m/grep|vim \/etc\/hostname|vi \/etc\/hostname|rm/ or $histline =~ m/set_hostname/);
+            print YELLOW "\t \\_ On " . BOLD GREEN scalar localtime($histtime) . " - " . $histline . "\n" unless($histline =~ m/grep|vim \/etc\/hostname|vi \/etc\/hostname|rm/ or $histline =~ m/set_hostname/);
 		}
 		if ($histline =~ m/hostname /) { 
-            print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n" unless($histline =~ m/grep|vim \/etc\/hostname|vi \/etc\/hostname|rm/ or $histline =~ m/set_hostname/ or $histline =~ m/set-hostname/);
+            print YELLOW "\t \\_ On " . BOLD GREEN scalar localtime($histtime) . " - " . $histline . "\n" unless($histline =~ m/grep|vim \/etc\/hostname|vi \/etc\/hostname|rm/ or $histline =~ m/set_hostname/ or $histline =~ m/set-hostname/);
 		}
 	}
 }
@@ -580,7 +594,7 @@ sub check_for_cpkeyclt_from_cli {
 			$histtime=substr($histline,1);
 		}	
 		if ($histline =~ m/cpkeyclt/) { 
-			push(@cpkeycltINHist, "\t \\_ " . BOLD GREEN scalar localtime($histtime) . " - " . $histline);
+			push(@cpkeycltINHist, "\t \\_ On " . BOLD GREEN scalar localtime($histtime) . " - " . $histline);
 		}
 	}	
     my $cpkeyInHistLine;
@@ -1126,10 +1140,10 @@ sub run_check_valid_server_hostname {
 
 sub check_for_dhcp { 
 	my $nicdevice=$_[0];
-    print_working("Checking Networking Configs For DHCP \n");
+    print_working("Checking Networking Configs For DHCP: ");
 	my $grep4dhcp=qx[ grep -i 'dhcp' /etc/sysconfig/network-scripts/ifcfg-$nicdevice ];
 	if ($grep4dhcp) { 
-		print_warn( "\t \\_  " . $nicdevice . " has DHCP config - can cause IP/Hostname to change automatically!");
+		print_warn( "\n\t \\_  " . $nicdevice . " has DHCP config - can cause IP/Hostname to change automatically!");
 	}	
 	else {
 		print_OK(" None Found!");
@@ -1140,7 +1154,10 @@ sub check_for_dhcp {
 
 sub check_for_cloudcfg {
     print_working("Checking for /etc/cloud/cloud.cfg.d/");
-	return if (!(-e("/etc/cloud")));
+	if (!(-e("/etc/cloud"))) { 
+		print " - None\n";
+		return;
+	}
 	print BOLD GREEN " - Found!\n";
 	if (-e("/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg")) { 
 		print_OK("99-preserve-hostname.cfg is present");
@@ -1167,10 +1184,15 @@ sub check_for_cloudcfg {
 
 sub check_for_solo { 
 	print_working("Checking for solo license: ");
+    if ( !-e "/usr/local/cpanel/cpanel.lisc" ) {
+        print_warn("cpanel.lisc file is missing!");
+        return;
+    }
 	my $isSolo="No";
 	my ($isSoloNum)=(split(/\s+/,qx[ strings /usr/local/cpanel/cpanel.lisc | grep maxusers ]))[1];
+	$isSoloNum=1;
 	if ($isSoloNum == 1) { 
-		$isSolo="Yes";
+		$isSolo="Yes - Note: Only 1 account can be listed in /etc/trueuserdomains!";
 	}
 	print BOLD CYAN $isSolo;
 	print "\n";
@@ -1180,4 +1202,22 @@ sub getVerifyJSON {
 	print_working("https://verify.cpanel.net JSON data for $EXTERNAL_IP_ADDRESS_80: \n");
 	my $JSONVerifyPage=qx[ curl -s "https://verify.cpanel.net/verifyFeed.cgi?json=1&ip=$EXTERNAL_IP_ADDRESS_80" | python -mjson.tool ];
 	print $JSONVerifyPage;
+}
+
+sub getHist { 
+	print_working("Checking /root/.bash_history for shenanigans: \n");
+	open(HIST,"/root/.bash_history");
+	my @HISTORY=<HIST>;
+	close(HIST);
+	my $histline;
+	my $histtime;
+	foreach $histline(@HISTORY) { 
+		chomp($histline);
+		if (substr($histline,0,1) eq "#") { 
+			$histtime=substr($histline,1);
+		}
+		if ($histline =~ m/ip route |cpanel\.lisc|cpsanitycheck.so/) { 
+            print YELLOW "\t \\_ On " . BOLD GREEN scalar localtime($histtime) . " - " . $histline . "\n" unless($histline =~ m/grep/);
+		}
+	}
 }
