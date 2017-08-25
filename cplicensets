@@ -41,7 +41,6 @@ GetOptions(
     "verifypage" => \$verifypage,
 );
 
-system("clear");
 print "<c>\n";
 print "cPanel License Troubleshooter - Version: $version\n\n";
 print BOLD MAGENTA "Additional options:\n\n--skipdate skips date check\n";
@@ -54,9 +53,13 @@ print BOLD MAGENTA "--verifypage show verify.cpanel.net page in JSON format.\n\n
 our $HOSTNAME;
 our $mainip;
 our $envtype;
+our $MAC;
 our $HOSTNAME_IP;
 our $EXTERNAL_IP_ADDRESS_80 = determine_ip(80);
-our $MAC;
+our $EXTERNAL_IP_ADDRESS_2089 = determine_ip(2089);
+if ($EXTERNAL_IP_ADDRESS_80 ne $EXTERNAL_IP_ADDRESS_2089) { 
+	print RED "[WARN] - IP Address on port 80 ($EXTERNAL_IP_ADDRESS_80) does not match the one on 2089 ($EXTERNAL_IP_ADDRESS_2089)\n";
+}
 
 is_license_valid();
 check_for_trial();
@@ -337,7 +340,8 @@ sub get_devices {
        			. "\t \\_ Ethernet Device Name: "
        			. CYAN $device . "\n";
        		print BOLD YELLOW . "\t\t \\_ Address: " . CYAN $if->address . "\n";
-       		print BOLD YELLOW . "\t\t \\_ MAC: " . CYAN $if->hwaddr . "\n";
+			my $MACVendor=getMAC($if->hwaddr);
+       		print BOLD YELLOW . "\t\t \\_ MAC: " . CYAN $if->hwaddr . " [" . $MACVendor . "]\n";
        		print BOLD YELLOW . "\t\t \\_ Broadcast: " . CYAN $if->broadcast . "\n";
        		print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n";
        		print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n";
@@ -1101,7 +1105,8 @@ sub arping_check {
 	my $nicdevice=$_[0];
     return if ( $envtype eq "virtuozzo" );
     print_working("Checking $nicdevice for multiple devices responding to $EXTERNAL_IP_ADDRESS_80: ");
-    my $ARPINGCMD = qx[ arping -D -I $nicdevice -c 2 $EXTERNAL_IP_ADDRESS_80 | grep 'Received 0' ];
+	my $ARPINGCMD="";
+    $ARPINGCMD = qx[ arping -D -I $nicdevice -c 2 $EXTERNAL_IP_ADDRESS_80 | grep 'Received 0' ];
 	chomp($ARPINGCMD);
     if ($ARPINGCMD =~ m/Received 0/) { 
         print_OK("Good! - None found!"); 
@@ -1220,3 +1225,25 @@ sub getHist {
 		}
 	}
 }
+
+sub url_encode {
+	my $rv = shift;
+	$rv =~ s/([^a-z\d\Q.-_~ \E])/sprintf("%%%2.2X", ord($1))/geix;
+	$rv =~ tr/ /+/;
+	return $rv;
+}
+
+sub getMAC { 
+	my $macaddr = $_[0];
+	my $macaddrencoded = url_encode($macaddr);
+	my $MACchkURL = "http://api.macvendors.com/" . $macaddrencoded;
+	my $result = qx[ curl -s $MACchkURL ];
+	chomp($result);
+#	if ($result) { 
+		return $result;
+#	}
+#	else { 
+#		return
+#	}
+}
+
