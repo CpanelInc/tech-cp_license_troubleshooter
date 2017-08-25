@@ -27,7 +27,7 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 
-my $version = "1.21";
+my $version = "1.22";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -1154,7 +1154,6 @@ sub check_for_dhcp {
 		print_OK(" None Found!");
 		print "\n";
 	}
-	
 }
 
 sub check_for_cloudcfg {
