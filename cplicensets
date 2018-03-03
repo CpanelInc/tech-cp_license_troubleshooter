@@ -23,7 +23,7 @@ use Cpanel::Config::LoadWwwAcctConf ();
 use Cpanel::Validate::Hostname;
 use Cpanel::Validate::IP;
 
-my $version = "1.25";
+my $version = "1.26";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -36,6 +36,16 @@ GetOptions(
     "withlogs"   => \$withlogs,
     "verifypage" => \$verifypage,
 );
+
+our $CPANEL_LICENSE_FILE = '/usr/local/cpanel/cpanel.lisc';
+my $file_is_solo             = license_file_is_solo();
+my $file_is_dnsonly          = license_file_is_dnsonly();
+my $file_is_cpanel           = license_file_is_cpanel();
+my $file_is_cloudlinux       = license_file_is_cloudlinux();
+my $license_ip               = license_file_ip();
+my $license_expire_time      = license_file_expire();
+my $updates_expire_time      = license_file_updates_expire();
+my $support_expire_time      = license_file_support_expire();
 
 print "<c>\n";
 print "cPanel License Troubleshooter - Version: $version\n\n";
@@ -104,10 +114,6 @@ if ( -e ( "/usr/local/cpanel/cpanel.lisc" or ( -e ("/usr/local/cpanel/cpsanitych
     is_lisc_lockable();
 }
 run_rdate();
-getExpCnt();
-getLockedCnt();
-getFailCnt();
-getSuccessCnt();
 chkCreds();
 display_route();
 get_cpsrvd_restarts();
@@ -146,11 +152,9 @@ sub is_hostname_fqdn {
 }
 
 sub is_license_valid {
-    print_working(
-"Verifying if $EXTERNAL_IP_ADDRESS_80 is valid by checking https://verify.cpanel.net: "
-    );
+    print_working( "Verifying if $EXTERNAL_IP_ADDRESS_80 has a valid license: ");
     my $host       = 'verify.cpanel.net';
-    my $helper_url = "http://" . $host;
+    my $helper_url = "https://" . $host;
     my $url        = '/index.cgi?ip=' . $EXTERNAL_IP_ADDRESS_80;
     $helper_url .= $url;
     my $sock = IO::Socket::INET->new(
@@ -169,59 +173,34 @@ sub is_license_valid {
     if ( $buffer =~ m/active<br\/>/ ) {
         print_OK("Active!");
         print "\n";
-        if ( -e ("/usr/local/cpanel/cpanel.lisc") ) {
-            my ($license_expires_on) = (
-                split(
-                    /\s+/,
-qx[ grep -a 'license_expire_time' /usr/local/cpanel/cpanel.lisc ]
-                )
-            )[1];
-
-            print BOLD YELLOW "License File Has Expiration Date Of: "
-              . GREEN scalar localtime($license_expires_on);
-            if ( $timenow > $license_expires_on ) {
+		print YELLOW "\t \\_ https://verify.cpanel.net/index.cgi?ip=$EXTERNAL_IP_ADDRESS_80\n";
+#        print "\n";
+		if (-e($CPANEL_LICENSE_FILE)) {
+    		print BOLD YELLOW "Licensed for IP: " . BOLD GREEN $license_ip . "\n";
+			chomp($license_expire_time);
+    		print BOLD YELLOW "License Expires On: " . BOLD GREEN scalar localtime($license_expire_time) . "\n";
+            if ( $timenow > $license_expire_time ) {
                 print_warn(" EXPIRED!");
             }
-            print "\n";
-            my ($onetime_license) = (
-                split(
-                    /\s+/,
-qx[ grep -a 'updates_expire_time' /usr/local/cpanel/cpanel.lisc ]
-                )
-            )[1];
-            if ( $onetime_license != 0 ) {
-                print BOLD YELLOW
-                  "License may be one-time license. Updates expire on: "
-                  . GREEN scalar localtime($onetime_license);
-                if ( $timenow > $onetime_license ) {
-                    print_warn(" EXPIRED!");
-                }
-                print "\n";
+		    print BOLD YELLOW "Solo License: " . BOLD GREEN $file_is_solo . "\n";
+    		print BOLD YELLOW "DNSOnly license: " . BOLD GREEN $file_is_dnsonly . "\n";
+    		print BOLD YELLOW "Licensed for cPanel: " . BOLD GREEN $file_is_cpanel . "\n";
+    		print BOLD YELLOW "Licensed for CloudLinux: " . BOLD GREEN $file_is_cloudlinux . "\n";
+    		print BOLD YELLOW "License Expires On: " . BOLD GREEN scalar localtime($license_expire_time) . "\n";
+            if ( $timenow > $license_expire_time ) {
+                print_warn(" EXPIRED!");
             }
-            my ($support_expired) = (
-                split(
-                    /\s+/,
-qx[ grep -a 'support_expire_time' /usr/local/cpanel/cpanel.lisc ]
-                )
-            )[1];
-            if ( $support_expired != 0 ) {
-                print BOLD YELLOW
-"Support for this license has expiration date. Support expires on: "
-                  . GREEN scalar localtime($support_expired);
-                if ( $timenow > $support_expired ) {
-                    print_warn(" EXPIRED!");
-                }
-                print "\n";
-            }
-			check_for_solo();	
-        }
-        else {
-            print_warn("cpanel.lisc file is missing!");
-        }
+    		print BOLD YELLOW "Updates Expires On: " . BOLD GREEN scalar localtime($updates_expire_time) . "\n" unless($updates_expire_time ==0);
+    		print BOLD YELLOW "Support Expires On: " . BOLD GREEN scalar localtime($support_expire_time) . "\n" unless($support_expire_time ==0);
+		}
+		else {
+    		print "cpanel.lisc file missing!\n";
+		}
         return;
     }
     if ( $buffer =~ m/expired on<br\/>/ ) {
         print_warn("Expired! - Send ticket to customer service");
+		print RED "\t \\_ https://verify.cpanel.net/index.cgi?ip=$EXTERNAL_IP_ADDRESS_80\n";
         return;
     }
 }
@@ -365,6 +344,7 @@ sub get_devices {
     my @DEVICES = qx[ ip -o link show ];
     foreach $deviceline (@DEVICES) {
         chomp($deviceline);
+        next if ($deviceline =~ /DOWN/);
         ($device) = ( split( /\s+/, $deviceline ) )[1];
         chop($device);    ## Remove trailing colon
         if ( $device eq "lo" ) { next; }
@@ -835,11 +815,8 @@ sub check_other_ports {
 }
 
 sub check_perms_on_cpanel_lisc_file {
+    return if ( !-e "/usr/local/cpanel/cpanel.lisc" );
     print_working("Checking permissions on cpanel.lisc file: ");
-    if ( !-e "/usr/local/cpanel/cpanel.lisc" ) {
-        print_warn("cpanel.lisc file is missing!");
-        return;
-    }
     my $statmode = ( stat("/usr/local/cpanel/cpanel.lisc") )[2] & 07777;
     $statmode = sprintf "%lo", $statmode;
     if ( $statmode != 644 ) {
@@ -850,13 +827,13 @@ sub check_perms_on_cpanel_lisc_file {
         print "\n";
     }
     get_age();
-    my @OutPut =
-qx[ cat /usr/local/cpanel/cpanel.lisc | sed -n '/License Version/,/crc32/p' ];
-    my $lineoutput;
-    foreach $lineoutput (@OutPut) {
-        chomp($lineoutput);
-        print BOLD YELLOW "\t \\_ " . $lineoutput . "\n";
-    }
+#    my @OutPut =
+#qx[ cat /usr/local/cpanel/cpanel.lisc | sed -n '/License Version/,/crc32/p' ];
+#    my $lineoutput;
+#    foreach $lineoutput (@OutPut) {
+#        chomp($lineoutput);
+#        print BOLD YELLOW "\t \\_ " . $lineoutput . "\n";
+#    }
 }
 
 sub is_file_immutable {
@@ -1353,10 +1330,14 @@ sub url_encode {
 }
 
 sub getMAC {
+	return;
     my $macaddr        = $_[0];
-    my $macaddrencoded = url_encode($macaddr);
-    my $MACchkURL      = "http://api.macvendors.com/" . $macaddrencoded;
-    my $result         = qx[ curl -s $MACchkURL ];
+	#$macaddr = "bc:30:5b:eb:8e:7f";
+	$macaddr =~ s/://g;   ## Remove colons
+	$macaddr=substr($macaddr,0,6);	
+#    my $macaddrencoded = url_encode($macaddr);
+    my $MACchkURL      = "http://standards-oui.ieee.org/oui/oui.txt";
+    my $result         = qx[ curl -s $MACchkURL | grep $macaddr ];
     chomp($result);
     return $result;
 }
@@ -1527,3 +1508,60 @@ sub get_ipinfo {
 		print BOLD CYAN "\t\\_ $ipinfoline\n";
 	}	
 }
+
+sub get_cpanel_license_file_info_href {
+    my %license;
+    if ( open my $license_fh, '<', $CPANEL_LICENSE_FILE ) {
+        my @license_text;
+        while (<$license_fh>) {
+            last if m{ \A -----BEGIN }xms;
+            next unless m{ \A \p{IsPrint}+ \Z }xms;
+            chomp;
+            push @license_text, $_;
+        }
+        close $license_fh;
+        %license = map { ( split( /:\s+/, $_, 2 ) )[ 0, 1 ] } @license_text;
+    }
+    return \%license;
+}
+sub license_file_is_cloudlinux {
+    my $href = get_cpanel_license_file_info_href();
+    return "None" if not exists $href->{products};
+    return "Yes" if grep { /cloudlinux/ } $href->{products};
+    return "No";
+}
+sub license_file_is_cpanel {
+    my $href = get_cpanel_license_file_info_href();
+    return "None" if not exists $href->{products};
+    return "Yes" if grep { /cpanel/ } $href->{products};
+    return "No";
+}
+sub license_file_is_dnsonly {
+    my $href = get_cpanel_license_file_info_href();
+    return "None" if not exists $href->{products};
+    return "Yes" if grep { /dnsonly/ } $href->{products};
+    return "No";
+}
+sub license_file_is_solo {
+    my $href = get_cpanel_license_file_info_href();
+    return "None" if not exists $href->{products} or not exists $href->{maxusers};
+    return "Yes" if ( grep { /cpanel/ } $href->{products} and $href->{maxusers} == 1 );
+    return "No";
+}
+sub license_file_ip {
+    my $href = get_cpanel_license_file_info_href();
+    return $href->{client};
+}
+sub license_file_support_expire {
+    my $href = get_cpanel_license_file_info_href();
+    return $href->{support_expire_time};
+}
+sub license_file_updates_expire {
+    my $href = get_cpanel_license_file_info_href();
+    return $href->{updates_expire_time};
+}
+sub license_file_expire {
+    my $href = get_cpanel_license_file_info_href();
+    return $href->{license_expire_time};
+}
+
