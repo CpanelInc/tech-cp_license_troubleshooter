@@ -23,7 +23,7 @@ use Cpanel::Config::LoadWwwAcctConf ();
 use Cpanel::Validate::Hostname;
 use Cpanel::Validate::IP;
 
-my $version = "1.26";
+my $version = "1.27";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -46,6 +46,8 @@ my $license_ip               = license_file_ip();
 my $license_expire_time      = license_file_expire();
 my $updates_expire_time      = license_file_updates_expire();
 my $support_expire_time      = license_file_support_expire();
+my $json;
+my $tried_import;
 
 print "<c>\n";
 print "cPanel License Troubleshooter - Version: $version\n\n";
@@ -70,6 +72,7 @@ chk_for_lisclock();
 check_for_trial();
 is_hostname_fqdn();
 check_hostsfile();
+check_for_accountinglog();
 get_envtype();
 get_mainip();
 get_ipinfo($EXTERNAL_IP_ADDRESS_80);
@@ -318,7 +321,7 @@ sub display_etc_hostname {
         print "\n";
     }
     else {
-        print_warn("None found!");
+        print_warn("None Found");
     }
 }
 
@@ -570,7 +573,6 @@ sub check_for_hostname_changes {
     my @accesslog_hostnames =
       qx[ grep 'dochangehostname?hostname' /usr/local/cpanel/logs/access_log ];
     my $alhostcnt = @accesslog_hostnames;
-
     if ( $alhostcnt == 0 ) {
         print BOLD CYAN "\t \\_ None Found.\n";
     }
@@ -625,6 +627,19 @@ sub check_for_hostname_changes {
                 or $histline =~ m/set-hostname/ );
         }
     }
+	print_working("Checking /var/log/messages for hostname changes: \n");
+	my $messhost;
+	my @messlogRestarts = qx[ grep 'systemd-hostnamed: Changed host name to' /var/log/messages ];
+    my $messcnt = @messlogRestarts;
+    if ( $messcnt == 0 ) {
+        print BOLD CYAN "\t \\_ None Found.\n";
+    }
+	else { 
+		foreach $messhost(@messlogRestarts) { 
+			chomp($messhost);
+			print YELLOW "\t \\_ $messhost\n";
+		}
+	}
 }
 
 sub check_for_cpkeyclt_from_cli {
@@ -729,22 +744,26 @@ sub get_date {
         );
     }
     if ( $utctime eq "" ) {
-        $utctime = "Could Not Retrieve!";
+        $utctime = "Could Not Retrieve! - check network/firewall\n";
+	    print BOLD GREEN ON_BLACK "\t \\_ Outside Location: "
+      	. BOLD MAGENTA $utctime; 
     }
-    print BOLD GREEN ON_BLACK "\t \\_ Outside Location: "
-      . $utctime . " ("
-      . scalar localtime($utctime) . ")\n";
-    my $timediff = $servertime - $utctime;
-    if ( $timediff != 0 ) {
-        if ( $timediff < -5 or $timediff > 5 ) {
-            print_warn(
-                "\t \\_ [WARN] - Date/Time is off my more than 5 seconds!");
-        }
-        else {
-            print_OK("\t \\_ [OK] - Date/Time is within 5 seconds!");
-            print "\n";
-        }
-    }
+	else { 
+	    print BOLD GREEN ON_BLACK "\t \\_ Outside Location: "
+      	. $utctime . " ("
+      	. scalar localtime($utctime) . ")\n";
+    	my $timediff = $servertime - $utctime;
+    	if ( $timediff != 0 ) {
+        	if ( $timediff < -5 or $timediff > 5 ) {
+            	print_warn(
+                	"\t \\_ [WARN] - Date/Time is off my more than 5 seconds!");
+        	}
+        	else {
+            	print_OK("\t \\_ [OK] - Date/Time is within 5 seconds!");
+            	print "\n";
+        	}
+    	}
+	}
 }
 
 sub check_auth_cpanel_resolution {
@@ -975,16 +994,31 @@ sub get_wwwacctconf_ip {
 sub check_cron_log {
     my $ExistsInCron;
     print_working("Checking for cpkeyclt being run via cron: \n");
-    print BOLD GREEN ON_BLACK "\t \\_ /var/log/cron: ";
-    $ExistsInCron = qx[ grep 'cpkeyclt' /var/log/cron ];
-    chomp($ExistsInCron);
-    if ($ExistsInCron) {
-        print_warn("Found in /var/log/cron log file");
-    }
-    else {
-        print_OK("Not found - Good!");
-        print "\n";
-    }
+	if (-e("/etc/systemd/system/cron.service") and !-e("/var/log/cron")) { 
+    	print BOLD GREEN ON_BLACK "\t \\_ journalctl cron check: ";
+		$ExistsInCron =qx[ /usr/bin/journalctl | grep -i cron | grep cpkeyclt ];
+    	chomp($ExistsInCron);
+    	if ($ExistsInCron) {
+        	print_warn("Found in cron log file");
+    	}
+    	else {
+        	print_OK("Not found - Good!");
+        	print "\n";
+    	}
+	} elsif (-e("/var/log/cron")) { 
+    	print BOLD GREEN ON_BLACK "\t \\_ /var/log/cron: ";
+    	$ExistsInCron = qx[ grep 'cpkeyclt' /var/log/cron ];
+    	chomp($ExistsInCron);
+    	if ($ExistsInCron) {
+        	print_warn("Found in cron log file");
+    	}
+    	else {
+        	print_OK("Not found - Good!");
+        	print "\n";
+    	}
+	} else { 
+		print_warn("\t \\_ No /var/log/cron file and systemd cron.service not configured!");
+	}
     print BOLD GREEN ON_BLACK "\t \\_ /var/spool/cron/root file: ";
     $ExistsInCron = qx[ grep 'cpkeyclt' /var/spool/cron/root ];
     chomp($ExistsInCron);
@@ -1164,7 +1198,7 @@ sub arping_check {
 qx[ arping -D -I $nicdevice -c 2 $nicIPAddr | grep 'Received 0' ];
     chomp($ARPINGCMD);
     if ( $ARPINGCMD =~ m/Received 0/ ) {
-        print_OK("Good! - None found!");
+        print_OK("Good! - None found");
         print "\n";
     }
     else {
@@ -1219,14 +1253,14 @@ sub check_for_dhcp {
         );
     }
     if ( !$grep4dhcp and !$Look4NM_dhclient ) {
-        print_OK(" None Found!");
+        print BOLD CYAN "\t \\_ None Found\n";
     }
 }
 
 sub check_for_cloudcfg {
     print_working("Checking for /etc/cloud/cloud.cfg.d/");
     if ( !( -e ("/etc/cloud") ) ) {
-        print " - None\n";
+        print " - None Found\n";
         return;
     }
     print BOLD GREEN " - Found!\n";
@@ -1317,7 +1351,7 @@ sub chk_etc_hosts {
         chomp($hostline);
         if ( $hostline =~ m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net/)
         {
-            print BOLD YELLOW "\t \\_ Found this in /etc/hosts: " . RED $hostline . "\n";
+            print BOLD YELLOW "\t \\_ Found this in /etc/hosts: " . RED $hostline . " - Escalate to L3!\n";
         }
     }
 }
@@ -1330,15 +1364,12 @@ sub url_encode {
 }
 
 sub getMAC {
-	return;
     my $macaddr        = $_[0];
-	#$macaddr = "bc:30:5b:eb:8e:7f";
-	$macaddr =~ s/://g;   ## Remove colons
-	$macaddr=substr($macaddr,0,6);	
-#    my $macaddrencoded = url_encode($macaddr);
-    my $MACchkURL      = "http://standards-oui.ieee.org/oui/oui.txt";
-    my $result         = qx[ curl -s $MACchkURL | grep $macaddr ];
+    my $macaddrencoded = url_encode($macaddr);
+    my $MACchkURL      = "https://cpaneltech.ninja/cgi-bin/getvendor.cgi";
+    my $result         = qx[ curl -s "$MACchkURL?$macaddr" ];
     chomp($result);
+	$result =~ s/\s+$//;
     return $result;
 }
 
@@ -1454,15 +1485,18 @@ sub get_logStats {
 	my $activeCnt=qx[ grep -c '^The license has been activated too many times' /usr/local/cpanel/logs/license_log ];
 	my $failureCnt=qx[ grep -c 'License update failed' /usr/local/cpanel/logs/license_log ];
 	my $successCnt=qx[ grep -c 'License update succeeded' /usr/local/cpanel/logs/license_log ];
+	my $TotTWRestarts=qx[ grep -c 'Restarting cpsrvd' /var/log/chkservd.log ];
 	chomp($expireCnt);
 	chomp($activeCnt);
 	chomp($failureCnt);
 	chomp($successCnt);
+	chomp($TotTWRestarts);
 	print_working("Obtaining stats from license_log file:\n");
 	print BOLD CYAN "\t\\_ Total number of times license has expired: " . MAGENTA $expireCnt . "\n";
 	print BOLD CYAN "\t\\_ Total number of times license has been activated too many times: " . MAGENTA $activeCnt . "\n";
 	print BOLD CYAN "\t\\_ Total number of times license update has failed: " . MAGENTA $failureCnt . "\n";
 	print BOLD CYAN "\t\\_ Total number of times license update has succeeded: " . MAGENTA $successCnt . "\n";
+	print BOLD CYAN "\t\\_ Total number of times chkservd has restarted cpsrvd: " . MAGENTA $TotTWRestarts . "\n";
 	return;
 }
 
@@ -1472,10 +1506,12 @@ sub chk_for_lisclock {
 }
 
 sub shenanigans { 
-    print_working("Checking for shenanigans: \n");
+    print_working("Checking for strange configurations \n");
 	getHist();
 	chk_etc_hosts();
 	chk_fwdip();
+	chk_etc_ips();
+	chk_cgls();
 }
 
 sub chk_fwdip { 
@@ -1488,7 +1524,7 @@ sub chk_fwdip {
 	foreach $fwdip(@FWDIP) { 
 		chomp($fwdip);
 		if ($fwdip =~ m/208.74./) { 
-			print RED "\t\\_ Found $fwdip in /var/cpanel/domainfwdip file\n";
+			print RED "\t\\_ Found $fwdip in /var/cpanel/domainfwdip file - Escalate to L3!\n";
 		}
 	}
 }
@@ -1564,4 +1600,29 @@ sub license_file_expire {
     my $href = get_cpanel_license_file_info_href();
     return $href->{license_expire_time};
 }
-
+sub check_for_accountinglog {
+    print_working("Checking accounting.log file for first created account\n");
+	if (-e("/var/cpanel/accounting.log")) { 
+		my $FirstAcct=qx[ grep ':CREATE:' /var/cpanel/accounting.log | head -1 ];
+		my $delim="CREATE";
+		my $FirstAcctEnd = index($FirstAcct,$delim,0);
+		my $FirstAcctDate = substr($FirstAcct,0,$FirstAcctEnd-0);
+		chop($FirstAcctDate);
+		print BOLD CYAN "\t\\_ First account created on: " . YELLOW $FirstAcctDate . "\n";
+	}
+	else { 
+		print BOLD CYAN "\t\\_ None - Possible new install\n";
+	}
+}
+sub chk_etc_ips {
+	my $ourIPinetcips=qx[ grep '208.74.' /etc/ips ];
+	if ($ourIPinetcips) { 
+		print BOLD YELLOW "\t \\_ Found cPanel IP's within /etc/ips file - Escalate to L3!\n";
+	}
+}
+sub chk_cgls {
+	my $dir="/usr/local/cgls";
+	if (-e $dir and -d $dir) { 
+		print RED "\t \\_ Found CGLS - Escalate to L3!\n";
+	}
+}
