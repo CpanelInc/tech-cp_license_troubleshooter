@@ -23,7 +23,7 @@ use Cpanel::Config::LoadWwwAcctConf ();
 use Cpanel::Validate::Hostname;
 use Cpanel::Validate::IP;
 
-my $version = "1.27";
+my $version = "1.28";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -48,6 +48,7 @@ my $updates_expire_time      = license_file_updates_expire();
 my $support_expire_time      = license_file_support_expire();
 my $json;
 my $tried_import;
+our $DEVinConf;
 
 print "<c>\n";
 print "cPanel License Troubleshooter - Version: $version\n\n";
@@ -94,6 +95,7 @@ check_for_license_error();
 get_hostname_at_install();
 check_for_hostname_changes();
 check_for_cpkeyclt_from_cli();
+check_mounts();
 shenanigans();
 check_routing();
 check_for_cpnat();
@@ -187,6 +189,11 @@ sub is_license_valid {
             }
 		    print BOLD YELLOW "Solo License: " . BOLD GREEN $file_is_solo . "\n";
     		print BOLD YELLOW "DNSOnly license: " . BOLD GREEN $file_is_dnsonly . "\n";
+			if ($file_is_dnsonly eq "Yes") { 
+				if (! -e("/var/cpanel/dnsonly")) { 
+					print RED "\t \\_ [WARN] - " . BOLD CYAN "/var/cpanel/dnsonly file missing - cpsrvd may crash [CPANEL-19077]\n";
+				}
+			}
     		print BOLD YELLOW "Licensed for cPanel: " . BOLD GREEN $file_is_cpanel . "\n";
     		print BOLD YELLOW "Licensed for CloudLinux: " . BOLD GREEN $file_is_cloudlinux . "\n";
     		print BOLD YELLOW "License Expires On: " . BOLD GREEN scalar localtime($license_expire_time) . "\n";
@@ -204,6 +211,29 @@ sub is_license_valid {
     if ( $buffer =~ m/expired on<br\/>/ ) {
         print_warn("Expired! - Send ticket to customer service");
 		print RED "\t \\_ https://verify.cpanel.net/index.cgi?ip=$EXTERNAL_IP_ADDRESS_80\n";
+		if (-e($CPANEL_LICENSE_FILE)) {
+    		print BOLD YELLOW "Licensed for IP: " . BOLD GREEN $license_ip . "\n";
+			chomp($license_expire_time);
+    		print BOLD YELLOW "License Expires On: " . BOLD GREEN scalar localtime($license_expire_time) . "\n";
+            if ( $timenow > $license_expire_time ) {
+                print_warn(" EXPIRED!");
+            }
+		    print BOLD YELLOW "Solo License: " . BOLD GREEN $file_is_solo . "\n";
+    		print BOLD YELLOW "DNSOnly license: " . BOLD GREEN $file_is_dnsonly . "\n";
+			if ($file_is_dnsonly eq "Yes") { 
+				if (! -e("/var/cpanel/dnsonly")) { 
+					print RED "\t \\_ [WARN] - " . BOLD CYAN "/var/cpanel/dnsonly file missing - cpsrvd may crash [CPANEL-19077]\n";
+				}
+			}
+    		print BOLD YELLOW "Licensed for cPanel: " . BOLD GREEN $file_is_cpanel . "\n";
+    		print BOLD YELLOW "Licensed for CloudLinux: " . BOLD GREEN $file_is_cloudlinux . "\n";
+    		print BOLD YELLOW "License Expires On: " . BOLD GREEN scalar localtime($license_expire_time) . "\n";
+            if ( $timenow > $license_expire_time ) {
+                print_warn(" EXPIRED!");
+            }
+    		print BOLD YELLOW "Updates Expires On: " . BOLD GREEN scalar localtime($updates_expire_time) . "\n" unless($updates_expire_time ==0);
+    		print BOLD YELLOW "Support Expires On: " . BOLD GREEN scalar localtime($support_expire_time) . "\n" unless($support_expire_time ==0);
+		}
         return;
     }
 }
@@ -211,8 +241,6 @@ sub is_license_valid {
 sub get_external_ip {
     my ($port) = @_;
     die "get_external_ip port number not specified" if !$port;
-
-    # myip.cpanel.net supports HTTP ports 80, 2089 and HTTPS port 443.
     my $host = 'myip.cpanel.net';
     my $path = '/v1.0/';
     my $ip;
@@ -345,6 +373,7 @@ sub get_devices {
 	my $nicIP;
     print_working("Obtaining NIC Devices:\n");
     my @DEVICES = qx[ ip -o link show ];
+	my $inConf=0;
     foreach $deviceline (@DEVICES) {
         chomp($deviceline);
         next if ($deviceline =~ /DOWN/);
@@ -377,9 +406,15 @@ sub get_devices {
 "Device eth0 has no address - Seeing Waiting for devices to settle errors in license_log?"
                 );
             }
+			if ($device eq $DEVinConf) { 
+				$inConf=1;
+			}
             check_for_dhcp($device);
         }
     }
+	if (!$inConf) { 
+		print RED "[WARN] - " . BOLD CYAN "ETHDEV in /etc/wwwacct.conf (" . WHITE $DEVinConf . BOLD CYAN ") was not found as an active device!\n";
+	}
 }
 
 sub get_ip_of_hostname {
@@ -846,13 +881,6 @@ sub check_perms_on_cpanel_lisc_file {
         print "\n";
     }
     get_age();
-#    my @OutPut =
-#qx[ cat /usr/local/cpanel/cpanel.lisc | sed -n '/License Version/,/crc32/p' ];
-#    my $lineoutput;
-#    foreach $lineoutput (@OutPut) {
-#        chomp($lineoutput);
-#        print BOLD YELLOW "\t \\_ " . $lineoutput . "\n";
-#    }
 }
 
 sub is_file_immutable {
@@ -926,7 +954,7 @@ sub is_ntpd_installed {
         print "\n";
     }
     else {
-        print_OK("No (Note that it is not required.)");
+        print_OK("No (Not required.)");
         print "\n";
     }
 }
@@ -989,6 +1017,7 @@ sub get_wwwacctconf_ip {
     my $wwwacctIP = $conf->{'ADDR'};
     print_OK($wwwacctIP);
     print "\n";
+	$DEVinConf = $conf->{'ETHDEV'};
 }
 
 sub check_cron_log {
@@ -1190,6 +1219,7 @@ sub arping_check {
     my $nicdevice = $_[0];
 	my $nicIPAddr = $_[1];
     return if ( $envtype eq "virtuozzo" );
+	return if ( $nicIPAddr eq "" or $nicdevice eq "");
     print_working(
 "Checking $nicdevice for multiple devices responding to $nicIPAddr "
     );
@@ -1492,10 +1522,10 @@ sub get_logStats {
 	chomp($successCnt);
 	chomp($TotTWRestarts);
 	print_working("Obtaining stats from license_log file:\n");
-	print BOLD CYAN "\t\\_ Total number of times license has expired: " . MAGENTA $expireCnt . "\n";
-	print BOLD CYAN "\t\\_ Total number of times license has been activated too many times: " . MAGENTA $activeCnt . "\n";
-	print BOLD CYAN "\t\\_ Total number of times license update has failed: " . MAGENTA $failureCnt . "\n";
-	print BOLD CYAN "\t\\_ Total number of times license update has succeeded: " . MAGENTA $successCnt . "\n";
+	print BOLD CYAN "\t\\_ Total number of times license shows expired in license_log: " . MAGENTA $expireCnt . "\n";
+	print BOLD CYAN "\t\\_ Total number of times license shows been activated too many times in license_log: " . MAGENTA $activeCnt . "\n";
+	print BOLD CYAN "\t\\_ Total number of times license update shows failed in license_log: " . MAGENTA $failureCnt . "\n";
+	print BOLD CYAN "\t\\_ Total number of times license update shows succeeded in license_log: " . MAGENTA $successCnt . "\n";
 	print BOLD CYAN "\t\\_ Total number of times chkservd has restarted cpsrvd: " . MAGENTA $TotTWRestarts . "\n";
 	return;
 }
@@ -1512,6 +1542,7 @@ sub shenanigans {
 	chk_fwdip();
 	chk_etc_ips();
 	chk_cgls();
+	chk_rclocal();
 }
 
 sub chk_fwdip { 
@@ -1624,5 +1655,19 @@ sub chk_cgls {
 	my $dir="/usr/local/cgls";
 	if (-e $dir and -d $dir) { 
 		print RED "\t \\_ Found CGLS - Escalate to L3!\n";
+	}
+}
+
+sub chk_rclocal {
+	my $rcLocal=qx[ grep cpkeyclt /etc/rc.local ];
+	if ($rcLocal) { 
+		print RED "\t \\_ Found cpkeyclt in /etc/rc.local - Escalate to L3!\n";
+	}
+}
+
+sub check_mounts { 
+	my $liscMounted=qx[ mount | grep 'lisc' ]; 
+	if ($liscMounted) { 
+		print_warn("cpanel.lisc possibly mounted - Escalate to L3!");
 	}
 }
