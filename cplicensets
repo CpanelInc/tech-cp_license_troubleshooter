@@ -23,7 +23,7 @@ use Cpanel::Config::LoadWwwAcctConf ();
 use Cpanel::Validate::Hostname;
 use Cpanel::Validate::IP;
 
-my $version = "1.28";
+my $version = "1.29";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -91,6 +91,7 @@ check_file_for_odd_chars("/etc/sysconfig/network");
 check_if_hostname_resolves_locally();
 check_resolvconf();
 check_for_cloudcfg();
+check_for_dhclient_exit_hook();
 check_for_license_error();
 get_hostname_at_install();
 check_for_hostname_changes();
@@ -179,14 +180,16 @@ sub is_license_valid {
         print_OK("Active!");
         print "\n";
 		print YELLOW "\t \\_ https://verify.cpanel.net/index.cgi?ip=$EXTERNAL_IP_ADDRESS_80\n";
-#        print "\n";
-		if (-e($CPANEL_LICENSE_FILE)) {
+		if (-e ($CPANEL_LICENSE_FILE )) {
     		print BOLD YELLOW "Licensed for IP: " . BOLD GREEN $license_ip . "\n";
 			chomp($license_expire_time);
-    		print BOLD YELLOW "License Expires On: " . BOLD GREEN scalar localtime($license_expire_time) . "\n";
+    		print BOLD YELLOW "License Expires On: " . BOLD GREEN scalar localtime($license_expire_time);
             if ( $timenow > $license_expire_time ) {
                 print_warn(" EXPIRED!");
             }
+			print "\n";
+    		print BOLD YELLOW "Updates Expires On: " . BOLD GREEN scalar localtime($updates_expire_time) . "\n" unless($updates_expire_time ==0);
+    		print BOLD YELLOW "Support Expires On: " . BOLD GREEN scalar localtime($support_expire_time) . "\n" unless($support_expire_time ==0);
 		    print BOLD YELLOW "Solo License: " . BOLD GREEN $file_is_solo . "\n";
     		print BOLD YELLOW "DNSOnly license: " . BOLD GREEN $file_is_dnsonly . "\n";
 			if ($file_is_dnsonly eq "Yes") { 
@@ -196,20 +199,22 @@ sub is_license_valid {
 			}
     		print BOLD YELLOW "Licensed for cPanel: " . BOLD GREEN $file_is_cpanel . "\n";
     		print BOLD YELLOW "Licensed for CloudLinux: " . BOLD GREEN $file_is_cloudlinux . "\n";
-    		print BOLD YELLOW "License Expires On: " . BOLD GREEN scalar localtime($license_expire_time) . "\n";
-            if ( $timenow > $license_expire_time ) {
-                print_warn(" EXPIRED!");
-            }
-    		print BOLD YELLOW "Updates Expires On: " . BOLD GREEN scalar localtime($updates_expire_time) . "\n" unless($updates_expire_time ==0);
-    		print BOLD YELLOW "Support Expires On: " . BOLD GREEN scalar localtime($support_expire_time) . "\n" unless($support_expire_time ==0);
 		}
 		else {
-    		print "cpanel.lisc file missing!\n";
+    		print CYANE "\t \\_ cpanel.lisc file missing!\n";
 		}
         return;
     }
     if ( $buffer =~ m/expired on<br\/>/ ) {
-        print_warn("Expired! - Send ticket to customer service");
+		print_warn(
+"*******************************************************************"
+		);
+		print_warn(
+"************************* ESCALATE TO CS! *************************"
+		);
+		print_warn(
+"*******************************************************************"
+		);
 		print RED "\t \\_ https://verify.cpanel.net/index.cgi?ip=$EXTERNAL_IP_ADDRESS_80\n";
 		if (-e($CPANEL_LICENSE_FILE)) {
     		print BOLD YELLOW "Licensed for IP: " . BOLD GREEN $license_ip . "\n";
@@ -399,7 +404,8 @@ sub get_devices {
             print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n";
             print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n";
             arping_check($device,$nicIP);
-            check_for_multiple_defroute($device);
+            #check_for_multiple_defroute($device);
+            check_for_multiple_defroute();
 
             if ( $device eq "eth0" and $nicIP eq "" ) {
                 print_warn(
@@ -1154,16 +1160,20 @@ sub check_iptables {
         print_OK("Looks good!");
         print "\n";
     }
+	my $DROPPORTCHK = qx[ iptables -L -n | egrep '2086|2087' | grep DROP ];
+	if ($DROPPORTCHK) { 
+        print_warn("cPanel ports may be blocked (IPTABLES) Can cause cpsrvd to restart too often!");
+	}
 }
 
 sub check_for_trial {
-    print_working("Checking for trial license: ");
+#    print_working("Checking for trial license: ");
     if ( -e ("/var/cpanel/trial") ) {
-        print RED "Trial License Detected!\n";
+        print RED "/var/cpanel/trial touchfile present\n";
     }
-    else {
-        print BOLD GREEN "No Trial License Detected!\n";
-    }
+#    else {
+#        print BOLD GREEN "No Trial License Detected!\n";
+#    }
 }
 
 sub is_lisc_lockable {
@@ -1239,17 +1249,16 @@ qx[ arping -D -I $nicdevice -c 2 $nicIPAddr | grep 'Received 0' ];
 }
 
 sub check_for_multiple_defroute {
-    my $nicdevice = $_[0];
-    print_working("Checking $nicdevice for multiple DEFROUTE=yes lines: ");
+    print_working("Checking for multiple DEFROUTE=yes lines: ");
     my $defroutecnt =
-qx[ grep -c '^DEFROUTE=yes' /etc/sysconfig/network-scripts/ifcfg-$nicdevice ];
+qx[ grep '^DEFROUTE=yes' /etc/sysconfig/network-scripts/ifcfg-* | wc -l ];
     if ( $defroutecnt > 1 ) {
         print_warn(
-"\n\t \\_ Multiple DEFROUTE=yes lines found in /etc/sysconfig/network-scripts/ifcfg-$nicdevice"
+"\n\t \\_ Multiple DEFROUTE=yes lines found in /etc/sysconfig/network-scripts/ifcfg- files..."
         );
     }
     else {
-        print_OK("Only 1 found - GOOD!");
+        print_OK("OK");
         print "\n";
     }
 }
@@ -1320,6 +1329,23 @@ sub check_for_cloudcfg {
     }
 }
 
+sub check_for_dhclient_exit_hook {
+    print_working("Checking for /etc/dhcp/dhclient-exit-hooks.d/");
+	if (!(-e("/etc/dhcp/dhclient-exit-hooks.d/"))) { 
+		print " - None Found\n";
+		return;
+	}
+	print BOLD GREEN " - Found!\n";
+	if ( -e ("/etc/dhcp/dhclient-exit-hooks.d/zzz-set-hostname.sh")) { 
+		print_OK("zzz-set-hostname.sh is present");
+		print "\n";
+		return;
+	}
+	else { 
+		print_warn("\t \\_ zzz-set-hostname.sh script missing - If GCE this can help prevent hostname resets [CPANEL-20617]");
+	}
+}
+
 sub check_for_solo {
 	return if (!(-e "/usr/local/cpanel/cpanel.lisc"));
     print_working("Checking for solo license: ");
@@ -1333,7 +1359,8 @@ sub check_for_solo {
         $isSolo = "Yes";
     }
     print BOLD CYAN $isSolo;
-    my $TotalAccts = qx[ wc -l /etc/trueuserdomains ];
+    #my $TotalAccts = qx[ wc -l /etc/trueuserdomains ];
+    my $TotalAccts = qx[ ls -a /var/cpanel/users | egrep -v 'cptkt|system' | wc -l ];
     if ( $TotalAccts > 1 and $isSoloNum == 1 ) {
         print_warn(
             "\n\t \\_ SOLO LICENSE WITH MORE THAN 1 ACCOUNT DETECTED!!! [HAN SHOT FIRST!]");
@@ -1481,30 +1508,6 @@ sub get_age {
     }
 }
 
-sub getExpCnt { 
-	print_working("Obtaining total expired messages from license_log: ");
-	my $ExpCnt = qx[ grep -c '^The license is expired' /usr/local/cpanel/logs/license_log ];
-	print BOLD CYAN $ExpCnt;
-}
-
-sub getLockedCnt { 
-	print_working("Obtaining total license locked messages from license_log: ");
-	my $LockedCnt = qx[ grep -c '^The license has been activated too many times' /usr/local/cpanel/logs/license_log ];
-	print BOLD CYAN $LockedCnt;
-}
-
-sub getFailCnt { 
-	print_working("Obtaining total license update failed messages from license_log: ");
-	my $FailCnt = qx[ grep -c 'License update failed' /usr/local/cpanel/logs/license_log ];
-	print BOLD CYAN $FailCnt;
-}
-
-sub getSuccessCnt { 
-	print_working("Obtaining total license update succeeded messages from license_log: ");
-	my $SuccessCnt = qx[ grep -c 'License update succeeded' /usr/local/cpanel/logs/license_log ];
-	print BOLD CYAN $SuccessCnt;
-}
-
 sub chkCreds { 
 	return if(-e("/var/cpanel/licenseid_credentials.json"));
 	print_warn("licenseid_credentials.json file missing - is port 2083 inbound open?");
@@ -1515,17 +1518,20 @@ sub get_logStats {
 	my $activeCnt=qx[ grep -c '^The license has been activated too many times' /usr/local/cpanel/logs/license_log ];
 	my $failureCnt=qx[ grep -c 'License update failed' /usr/local/cpanel/logs/license_log ];
 	my $successCnt=qx[ grep -c 'License update succeeded' /usr/local/cpanel/logs/license_log ];
+	my $trialCnt=qx[ grep -c 'Already Used cPanel/WHM Trial License for this IP' /usr/local/cpanel/logs/license_log ];
 	my $TotTWRestarts=qx[ grep -c 'Restarting cpsrvd' /var/log/chkservd.log ];
 	chomp($expireCnt);
 	chomp($activeCnt);
 	chomp($failureCnt);
 	chomp($successCnt);
+	chomp($trialCnt);
 	chomp($TotTWRestarts);
 	print_working("Obtaining stats from license_log file:\n");
 	print BOLD CYAN "\t\\_ Total number of times license shows expired in license_log: " . MAGENTA $expireCnt . "\n";
 	print BOLD CYAN "\t\\_ Total number of times license shows been activated too many times in license_log: " . MAGENTA $activeCnt . "\n";
 	print BOLD CYAN "\t\\_ Total number of times license update shows failed in license_log: " . MAGENTA $failureCnt . "\n";
 	print BOLD CYAN "\t\\_ Total number of times license update shows succeeded in license_log: " . MAGENTA $successCnt . "\n";
+	print BOLD CYAN "\t\\_ Total number of times license update shows Already had a Trial License in license_log: " . MAGENTA $trialCnt . "\n";
 	print BOLD CYAN "\t\\_ Total number of times chkservd has restarted cpsrvd: " . MAGENTA $TotTWRestarts . "\n";
 	return;
 }
