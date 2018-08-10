@@ -28,7 +28,7 @@ use Text::CSV;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
 
-my $version = "2.0.01";
+my $version = "2.0.02";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -334,7 +334,6 @@ sub check_for_accountinglog {
         my $FirstAcct=qx[ grep ':CREATE:' /var/cpanel/accounting.log | head -1 ];
         my $FirstAcctEnd = index($FirstAcct,":CREATE:",0);
         my $FirstAcctDate = substr($FirstAcct,0,$FirstAcctEnd-0);
-        chop($FirstAcctDate);
         print BOLD CYAN "\t\\_ First account created on: " . YELLOW $FirstAcctDate . "\n";
     }
     else {
