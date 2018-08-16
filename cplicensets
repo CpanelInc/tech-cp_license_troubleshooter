@@ -28,7 +28,7 @@ use Text::CSV;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
 
-my $version = "2.0.02";
+my $version = "2.0.03";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -151,6 +151,7 @@ getVerifyDATA();
 my $warnmess;
 my $warncnt=@WARNINGS;
 if ($warncnt > 0) { 
+    print "\n";
 	print YELLOW "Found $warncnt warnings:\n";
 	foreach $warnmess(@WARNINGS) { 
 		chomp($warnmess);
@@ -567,6 +568,7 @@ sub get_network_hostname {
 sub get_ip_of_hostname {
 	my $HOSTNAME_IP = qx[ dig +tries=2 +time=5 \@208.67.222.222 $HOSTNAME +short 2>/dev/null ];
 	chomp($HOSTNAME_IP);
+    chop($HOSTNAME_IP);    ## Remove trailing period
 	my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($HOSTNAME_IP);
 	if (! $IPValid) { 
 		push(@WARNINGS, "Could not reverse $HOSTNAME to a valid IP address.");
@@ -670,23 +672,23 @@ sub check_for_cloudcfg {
     return if (!( -e ("/etc/cloud")));
     if ( -e ("/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg") ) {
 		if ($verbose) { 
-        	print_working("/etc/cloud/cloud.cfg/99-preserve-hostname.cfg " . GREEN "is present");
+        	print_working("/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg " . GREEN "is present");
         	return;
 		}
     }
     my $preserve_hostname = qx[ grep -srl 'preserve_hostname: true' /etc/cloud/* ];
     my $manageetchosts = qx[ grep -srl 'manage_etc_hosts: false' /etc/cloud/* ];
     if ($preserve_hostname) {
-		print BOLD GREEN "\t\\_ preserve_hostname is set to true in /etc/cloud/*" unless(! $verbose);
+		print BOLD GREEN "\t\\_ preserve_hostname is set to true in $preserve_hostname" unless(! $verbose);
     }
     else {
-        push(@WARNINGS, "(preserve_hostname not set! within /etc/cloud/cloud.cfg.d/");
+        push(@WARNINGS, "(preserve_hostname not set within any file in /etc/cloud/cloud.cfg.d/");
     }
     if ($manageetchosts) {
-		print BOLD GREEN "\t\\_ manage_etc_hosts is set to false in /etc/cloud/*" unless(! $verbose);
+		print BOLD GREEN "\t\\_ manage_etc_hosts is set to false in $manageetchosts" unless(! $verbose);
     }
     else {
-        push(@WARNINGS, "manage_etc_hosts not set! in /etc/cloud/cloud.cfg.d/");
+        push(@WARNINGS, "manage_etc_hosts not set within any file in /etc/cloud/cloud.cfg.d/");
     }
 }
 
@@ -983,7 +985,7 @@ sub check_for_cpnat {
         }
     }
     else {
-        print BOLD GREEN "\t\\_ None" unless(! $verbose);
+        print BOLD GREEN "\t\\_ None\n" unless(! $verbose);
     }
 }
 
