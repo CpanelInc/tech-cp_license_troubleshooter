@@ -28,7 +28,7 @@ use Text::CSV;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
 
-my $version = "2.0.03";
+my $version = "2.0.04";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -560,6 +560,7 @@ sub get_network_hostname {
     chomp($networkhost);
     print_working("Obtaining the HOSTNAME setting from /etc/sysconfig/network: " . GREEN $networkhost) unless(! $verbose);
 	($networkhost)=(split(/=/,$networkhost))[1];
+    $networkhost =~ s/\"//g;
 	if ( $networkhost ne $HOSTNAME ) {
 		push(@WARNINGS, "HOSTNAME value in /etc/sysconfig/network [$networkhost] does not match servers hostname [$HOSTNAME]");
 	}
@@ -568,7 +569,7 @@ sub get_network_hostname {
 sub get_ip_of_hostname {
 	my $HOSTNAME_IP = qx[ dig +tries=2 +time=5 \@208.67.222.222 $HOSTNAME +short 2>/dev/null ];
 	chomp($HOSTNAME_IP);
-    chop($HOSTNAME_IP);    ## Remove trailing period
+#    chop($HOSTNAME_IP);    ## Remove trailing period
 	my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($HOSTNAME_IP);
 	if (! $IPValid) { 
 		push(@WARNINGS, "Could not reverse $HOSTNAME to a valid IP address.");
