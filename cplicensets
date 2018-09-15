@@ -28,7 +28,7 @@ use Text::CSV;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
 
-my $version = "2.0.04";
+my $version = "2.0.05";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -88,7 +88,7 @@ my $validFQDN =is_hostname_fqdn();
 print_working("Servers External IP Address Detected As: " . CYAN $external_ip_address );
 if ($LicenseActive) { 
 	print_working("License Status: " . CYAN $LicenseActive . GREEN " [ " . $helper_url . " ]");
-	print_working( "License Valid For: " . CYAN $LicensedProducts );
+	print_working( "License Valid For: " . CYAN $LicensedProducts ) unless( ! $LicensedProducts );
 }
 else { 
 	print_working("License Status: " . RED "License not found on verify.cpanel.net, or request timed out." . GREEN "\n\t\\_ Check manually at " . $helper_url );
@@ -96,10 +96,14 @@ else {
 	push(@WARNINGS, "Could not verify license status via $helper_url");
 	push(@WARNINGS, "Could not determine the services/products this license covers");
 }
-# No need to continue if license is expired - exit stage left!
+# No need to continue if license is expired - exit stage left! Send customer to CS.
 if ($LicenseActive =~ m/Expired/) { 
 	print "</c>\n";
 	exit;
+}
+my $isGCE_IP=getGCE_IPs($external_ip_address);
+if ($isGCE_IP) { 
+    print "IP Address belongs to Google Compute Engine (GCE)";
 }
 print_working( "Hostname is FQDN: " . CYAN $validFQDN . " [$HOSTNAME]" );
 check_for_accountinglog();
@@ -442,7 +446,7 @@ sub get_devices {
             print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n" unless(! $verbose);
             print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n" unless(! $verbose);
             arping_check($device,$nicIP);
-            check_for_multiple_defroute();
+            check_for_multiple_defroute($device);
             if ( $device eq "eth0" and $nicIP eq "" ) {
             	push(@WARNINGS, "Device eth0 has no address - Seeing Waiting for devices to settle errors in license_log?");
             }
@@ -474,9 +478,10 @@ sub arping_check {
 }
 
 sub check_for_multiple_defroute {
+    my $tcDevice=$_[0];
     my $defroutecnt = qx[ grep '^DEFROUTE=yes' /etc/sysconfig/network-scripts/ifcfg-* | wc -l ];
     if ( $defroutecnt > 1 ) {
-        push(@WARNINGS, "Found multiple DEFROUTE=yes lines within the /etc/sysconfig/network-scripts/ifcfg- files.");
+        push(@WARNINGS, "Found multiple DEFROUTE=yes lines within the /etc/sysconfig/network-scripts/ifcfg-* files. [$tcDevice has one]");
     }
     else {
     	print_working("Checking for multiple DEFROUTE=yes lines: " . GREEN . "None") unless(! $verbose);
@@ -559,6 +564,7 @@ sub get_network_hostname {
     my $networkhost = qx[ grep '^HOSTNAME=' /etc/sysconfig/network ];
     chomp($networkhost);
     print_working("Obtaining the HOSTNAME setting from /etc/sysconfig/network: " . GREEN $networkhost) unless(! $verbose);
+    # THIS NEEDS TO CHECK FOR "HOSTNAME=" nothing else.  If not found, then move on.  
 	($networkhost)=(split(/=/,$networkhost))[1];
     $networkhost =~ s/\"//g;
 	if ( $networkhost ne $HOSTNAME ) {
@@ -583,6 +589,7 @@ sub get_ip_of_hostname {
 	if ($HOSTNAME_IP) { 
 		my $REVERSED_IP = qx[ dig +tries=2 +time=5 \@208.67.220.220 -x $HOSTNAME_IP +short 2>/dev/null ];
 		chomp($REVERSED_IP);
+        chop($REVERSED_IP);
 		if ($REVERSED_IP) {
 			print_working("Reversing IP [$HOSTNAME_IP]: " . GREEN $REVERSED_IP) unless(! $verbose);
 			if ($REVERSED_IP ne $HOSTNAME) { 
@@ -697,22 +704,21 @@ sub check_for_dhclient_exit_hook {
 	return if (!(-e("/etc/dhcp/dhclient-exit-hooks.d/")));
 	print_working("Checking for /etc/dhcp/dhclient-exit-hooks.d/ scripts") unless(! $verbose);
 	if ( -e ("/etc/dhcp/dhclient-exit-hooks.d/zzz-set-hostname.sh")) {
-		print BOLD GREEN "\t\\_ zzz-set-hostname.sh is present" unless (! $verbose);
+		print BOLD GREEN "\t\\_ zzz-set-hostname.sh is present\n" unless (! $verbose);
 		return;
 	}
 	else { 
-		print CYAN "\t\\_ zzz-set-hostname.sh not present\n" unless (! $verbose);
+		print BOLD CYAN "\t\\_ zzz-set-hostname.sh not present\n" unless (! $verbose);
 	}
 	if ( -e ("/etc/dhcp/dhclient-exit-hooks.d/set-hostname.sh")) {
-		print BOLD GREEN "\t\\_ set-hostname.sh is present" unless (! $verbose);
+		print BOLD GREEN "\t\\_ set-hostname.sh is present\n" unless (! $verbose);
 		return;
 	}
 	else { 
-		print CYAN "\t\\_ set-hostname.sh not present\n" unless (! $verbose);
+		print BOLD CYAN "\t\\_ set-hostname.sh not present\n" unless (! $verbose);
 	}
-	my $isGCE_IP=getGCE_IPs($external_ip_address);
 	if ($isGCE_IP) {
-		push(@WARNINGS,"Neither zzz-set-hostname.sh nor set-hostname.sh script not found - See: https://go.cpanel.net/cloudhostname [CPANEL-20617]");
+		push(@WARNINGS,"Neither zzz-set-hostname.sh nor set-hostname.sh script was found - See: https://go.cpanel.net/cloudhostname [CPANEL-20617]");
 	}
 	if (-e("/etc/dhcp/dhclient.d/google_hostname.sh")) { 
 		push(@WARNINGS, "Found /etc/dhcp/dhclient.d/google_hostname.sh file - consider disabling this. Causes license issues!");
@@ -750,7 +756,8 @@ sub check_for_license_error {
 			push(@WARNINGS, "This license has been activated too many times - ESCALATE TO L3!");
 		}
 		else { 
-			push(@WARNINGS, "License Error: " . $errline);
+			#push(@WARNINGS, "License Error: " . $errline);
+			push(@WARNINGS, "Please review the /usr/local/cpanel/logs/license_error.display file for additional license errors. ");
 		}	
     }
 }
@@ -762,10 +769,10 @@ sub get_hostname_at_install {
     my $HOSTNAME_AT_INSTALL = qx[ grep 'Validating that the system hostname' /var/log/cpanel-install.log | cut -d \" \" -f12 | cut -d \"\'\" -f2 2> /dev/null ];
     chomp($HOSTNAME_AT_INSTALL);
     if ( !($HOSTNAME_AT_INSTALL) ) {
-        print CYAN "\t\\_ Unknown\n";
+        print BOLD CYAN "\t\\_ Unknown\n";
     }
     else {
-        print CYAN "\t\\_ " . $HOSTNAME_AT_INSTALL . "\n";
+        print BOLD CYAN "\t\\_ " . $HOSTNAME_AT_INSTALL . "\n";
     }
 }
 
@@ -949,14 +956,14 @@ sub check_crons {
 	$ExistsInCron = qx[ grep 'cpkeyclt' /var/spool/cron/* ];
 	chomp($ExistsInCron);
 	if ($ExistsInCron) { 	
-		print RED "\t\\_ cpkeyclt found in $ExistsInCron \n" unless(! $verbose);
-		push(@WARNINGS,"cpkeyclt found in $ExistsInCron");
+		print RED "\t\\_ cpkeyclt found in /var/spool/cron/ file [ $ExistsInCron ]\n" unless(! $verbose);
+		push(@WARNINGS,"cpkeyclt found in /var/spool/cron/ file [ $ExistsInCron ]");
 	}
 	$ExistsInCron = qx[ grep -srl 'cpkeyclt' /etc/cron.* ];
 	chomp($ExistsInCron);
 	if ($ExistsInCron) { 	
-		print RED "\t\\_ cpkeyclt found in $ExistsInCron \n" unless(! $verbose);
-		push(@WARNINGS,"cpkeyclt found in $ExistsInCron");
+		print RED "\t\\_ cpkeyclt found in one of the /etc/cron.* directories [ $ExistsInCron ]\n" unless(! $verbose);
+		push(@WARNINGS,"cpkeyclt found in one of the /etc/cron.* directories [ $ExistsInCron ]");
 	}
 	$ExistsInCron = qx[ grep 'cpkeyclt' /etc/crontab ];
 	chomp($ExistsInCron);
@@ -1002,7 +1009,7 @@ sub check_root_servers {
             print_OK("\t \\_ $rootserver - Good!\n") unless(! $verbose);
         }
         else {
-            print_warn("\t \\_ $rootserver - Failed!\n") unless(! $verbose);
+            print_warn("\t \\_ $rootserver - Failed!") unless(! $verbose);
 			push(@WARNINGS, "Failed to resolve $rootserver"); 
         }
     }
@@ -1110,10 +1117,10 @@ sub check_cpanel_lisc_file {
 	my $Lockable = qx[ /usr/bin/flock -w 5 $cPLiscFile -c "echo 1" || echo "0" ];
 	chomp($Lockable);
 	if ( $Lockable ) {
-		print BOLD GREEN "\t\\_ Success\n" unless(! $verbose);
+		print BOLD GREEN "\t\\_ Yes\n" unless(! $verbose);
 	}
 	else {
-		print RED "\t\\_ Failed!\n" unless(! $verbose);
+		print RED "\t\\_ No\n" unless(! $verbose);
 		push(@WARNINGS, "Could not obtain lock on $cPLiscFile - ESCALATE TO L3!");
 	}
 }
@@ -1127,7 +1134,7 @@ sub run_rdate {
 		push(@WARNINGS, "rdate command failed! [$rdatesuccess]");
     }
     else {
-        print BOLD GREEN "\t\\_ Success!\n" unless(! $verbose);
+        print BOLD GREEN "\t\\_ Yes\n" unless(! $verbose);
     }
 }
 
@@ -1197,7 +1204,7 @@ sub getVerifyDATA {
 sub getVerifyJSON {
     print_working( "https://verify.cpanel.net JSON data for $external_ip_address \n");
     my $JSONVerifyPage = qx[ curl -s "https://verify.cpanel.net/verifyFeed.cgi?json=1&ip=$external_ip_address" | python -mjson.tool ];
-    print $JSONVerifyPage;
+    print CYAN $JSONVerifyPage;
 }
 
 sub Usage { 
@@ -1238,7 +1245,7 @@ sub read_last_50_lines_of_license_log {
         }
     }
     close F;
-    print @lines;
+    print CYAN @lines;
 }
 
 sub get_date {
@@ -1271,15 +1278,15 @@ sub get_date {
 
 sub check_for_solo {
 	return if (!(-e "$cPLiscFile"));
-    print_working("Checking for solo license: ") unless(! $verbose);
-    my $isSolo = "No";
+    my $isSolo = CYAN "No";
     my ($isSoloNum) = ( split( /\s+/, qx[ grep -a 'maxusers' $cPLiscFile ]))[1];
     if ( $isSoloNum == 1 ) {
-        $isSolo = "Yes";
+        $isSolo = CYAN "Yes";
     }
-    print BOLD CYAN $isSolo unless(! $verbose);
-    my $TotalAccts = qx[ ls -a /var/cpanel/users | egrep -v 'cptkt|system' | wc -l ];
+    print_working("Checking for solo license: $isSolo") unless(! $verbose);
+    my $TotalAccts = qx[ ls -a /var/cpanel/users | egrep -v 'cptkt|nobody|system|\.' | wc -l ];
     if ( $TotalAccts > 1 and $isSoloNum == 1 ) {
         push(@WARNINGS, "SOLO LICENSE WITH MORE THAN 1 ACCOUNT DETECTED!!! [HAN SHOT FIRST!]");
     }
 }
+
