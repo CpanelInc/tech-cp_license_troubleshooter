@@ -28,12 +28,12 @@ use Text::CSV;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
 
-my $version = "2.0.05";
+my $version = "2.0.06";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
 
-my ($skipdate, $withlogs, $verifypage, $verbose, $help);
+my ( $skipdate, $withlogs, $verifypage, $verbose, $help );
 our @WARNINGS;
 our @HISTORY;
 our $external_ip_address;
@@ -41,20 +41,20 @@ our $external_ip_address_2089;
 our %license;
 our $buffer;
 our $HOSTNAME;
-our $Trial=0;
+our $Trial      = 0;
 our $host       = 'verify.cpanel.net';
 our $helper_url = "https://" . $host;
-our $timenow = time();
+our $timenow    = time();
 
 module_sanity_check();
 get_external_ip();
 
 GetOptions(
     "skipdate"   => \$skipdate,
-    "verbose" => \$verbose,
+    "verbose"    => \$verbose,
     "verifypage" => \$verifypage,
-    "withlogs" => \$withlogs,
-	"help" => \$help,
+    "withlogs"   => \$withlogs,
+    "help"       => \$help,
 );
 
 our $cPLiscFile = '/usr/local/cpanel/cpanel.lisc';
@@ -63,46 +63,58 @@ our $envtype;
 
 print "<c>\n";
 print "cPanel License Troubleshooter - Version: $version\n";
-if ($verifypage) { 
-	getVerifyJSON();
-	print "</c>\n";
-	exit;
+if ($verifypage) {
+    getVerifyJSON();
+    print "</c>\n";
+    exit;
 }
 if ($withlogs) {
     read_last_50_lines_of_license_log();
-	print "</c>\n";
-	exit;
+    print "</c>\n";
+    exit;
 }
 Usage() if ($help);
 
 check_for_centOS5();
 print BOLD MAGENTA "--help show usage information\n";
-print BOLD MAGENTA "--verbose show everything [Default: show warnings only].\n\n";
+print BOLD MAGENTA
+  "--verbose show everything [Default: show warnings only].\n\n";
 
 verify_license();
 loadHistory();
-my $LicenseActive=is_active();
-my $LicensedProducts=LicensedProducts();
-my $validFQDN =is_hostname_fqdn();
+my $LicenseActive    = is_active();
+my $LicensedProducts = LicensedProducts();
+my $validFQDN        = is_hostname_fqdn();
 
-print_working("Servers External IP Address Detected As: " . CYAN $external_ip_address );
-if ($LicenseActive) { 
-	print_working("License Status: " . CYAN $LicenseActive . GREEN " [ " . $helper_url . " ]");
-	print_working( "License Valid For: " . CYAN $LicensedProducts ) unless( ! $LicensedProducts );
+print_working(
+    "Servers External IP Address Detected As: " . CYAN $external_ip_address );
+if ($LicenseActive) {
+    print_working( "License Status: "
+          . CYAN $LicenseActive
+          . GREEN " [ "
+          . $helper_url
+          . " ]" );
+    print_working( "License Valid For: " . CYAN $LicensedProducts )
+      unless ( !$LicensedProducts );
 }
-else { 
-	print_working("License Status: " . RED "License not found on verify.cpanel.net, or request timed out." . GREEN "\n\t\\_ Check manually at " . $helper_url );
-	print_working( "License Valid For: " . RED "COULD NOT DETERMINE!" );
-	push(@WARNINGS, "Could not verify license status via $helper_url");
-	push(@WARNINGS, "Could not determine the services/products this license covers");
+else {
+    print_working( "License Status: "
+          . RED "License not found on verify.cpanel.net, or request timed out."
+          . GREEN "\n\t\\_ Check manually at "
+          . $helper_url );
+    print_working( "License Valid For: " . RED "COULD NOT DETERMINE!" );
+    push( @WARNINGS, "Could not verify license status via $helper_url" );
+    push( @WARNINGS,
+        "Could not determine the services/products this license covers" );
 }
+
 # No need to continue if license is expired - exit stage left! Send customer to CS.
-if ($LicenseActive =~ m/Expired/) { 
-	print "</c>\n";
-	exit;
+if ( $LicenseActive =~ m/Expired/ ) {
+    print "</c>\n";
+    exit;
 }
-my $isGCE_IP=getGCE_IPs($external_ip_address);
-if ($isGCE_IP) { 
+my $isGCE_IP = getGCE_IPs($external_ip_address);
+if ($isGCE_IP) {
     print "IP Address belongs to Google Compute Engine (GCE)";
 }
 print_working( "Hostname is FQDN: " . CYAN $validFQDN . " [$HOSTNAME]" );
@@ -153,14 +165,14 @@ get_last_reboots();
 getVerifyDATA();
 
 my $warnmess;
-my $warncnt=@WARNINGS;
-if ($warncnt > 0) { 
+my $warncnt = @WARNINGS;
+if ( $warncnt > 0 ) {
     print "\n";
-	print YELLOW "Found $warncnt warnings:\n";
-	foreach $warnmess(@WARNINGS) { 
-		chomp($warnmess);
-		print RED "\t\\_ $warnmess\n";
-	}
+    print YELLOW "Found $warncnt warnings:\n";
+    foreach $warnmess (@WARNINGS) {
+        chomp($warnmess);
+        print RED "\t\\_ $warnmess\n";
+    }
 }
 print "</c>\n";
 exit;
@@ -187,29 +199,34 @@ sub check_for_centOS5 {
 sub module_sanity_check {
     my @required_mods = qw( IO::Socket::PortState IO::Interface::Simple );
     my $reqmod;
-	if ($verbose) { 
-    	print_working("\nChecking if required Perl Modules are installed:");
-	}
+    if ($verbose) {
+        print_working("\nChecking if required Perl Modules are installed:");
+    }
     foreach $reqmod (@required_mods) {
-       	eval("use $reqmod");
-       	if ($@) {
-           	print_warn( "\t \\_ " . $reqmod . " No - Installing!" ) unless (! $verbose);;
-           	my $modinstall = qx[ /usr/local/cpanel/bin/cpanm $reqmod 2> /dev/null ];
-       	}
-       	else {
-           	print_OK( "\t \\_ " . $reqmod . " OK!\n" ) unless (! $verbose);;
-       	}
-   	}
+        eval("use $reqmod");
+        if ($@) {
+            print_warn( "\t \\_ " . $reqmod . " No - Installing!" )
+              unless ( !$verbose );
+            my $modinstall =
+              qx[ /usr/local/cpanel/bin/cpanm $reqmod 2> /dev/null ];
+        }
+        else {
+            print_OK( "\t \\_ " . $reqmod . " OK!\n" ) unless ( !$verbose );
+        }
+    }
 }
 
-sub get_external_ip { 
-	$external_ip_address = qx[ curl -s -m 3 https://myip.cpanel.net/v1.0/ ];
-	$external_ip_address_2089 = qx[ curl -s -m 3 http://myip.cpanel.net:2089/v1.0/ ];
-	chomp($external_ip_address);
-	chomp($external_ip_address_2089);
-	if ($external_ip_address ne $external_ip_address_2089) { 
-		push(@WARNINGS, "External IP Address [$external_ip_address] on port 80 does not match that on port 2089 [$external_ip_address_2089]");
-	}
+sub get_external_ip {
+    $external_ip_address = qx[ curl -s -m 3 https://myip.cpanel.net/v1.0/ ];
+    $external_ip_address_2089 =
+      qx[ curl -s -m 3 http://myip.cpanel.net:2089/v1.0/ ];
+    chomp($external_ip_address);
+    chomp($external_ip_address_2089);
+    if ( $external_ip_address ne $external_ip_address_2089 ) {
+        push( @WARNINGS,
+"External IP Address [$external_ip_address] on port 80 does not match that on port 2089 [$external_ip_address_2089]"
+        );
+    }
 }
 
 sub print_working {
@@ -240,10 +257,15 @@ sub print_formatted {
     foreach (@input) { print CYAN "    $_\n"; }
 }
 
-sub verify_license { 
-    my $url        = '/index.cgi?ip=' . $external_ip_address;
+sub verify_license {
+    my $url = '/index.cgi?ip=' . $external_ip_address;
     $helper_url .= $url;
-    my $sock = IO::Socket::SSL->new ( PeerAddr => $host, PeerPort => 443, Proto => 'tcp', Timeout => 5);
+    my $sock = IO::Socket::SSL->new(
+        PeerAddr => $host,
+        PeerPort => 443,
+        Proto    => 'tcp',
+        Timeout  => 5
+    );
     local $SIG{'ALRM'} = sub { return (); };
     alarm 5;
     print $sock "GET ${url} HTTP/1.1\r\nHost: ${host}\r\n\r\n";
@@ -252,9 +274,9 @@ sub verify_license {
     close $sock;
 }
 
-sub LicensedProducts { 
+sub LicensedProducts {
     if ( $buffer =~ /alt="cPanel\/WHM"/ ) {
-	    $license{'cpanel'} = "cPanel";
+        $license{'cpanel'} = "cPanel";
     }
 
     if ( $buffer =~ /alt="CloudLinux"/ ) {
@@ -277,69 +299,78 @@ sub LicensedProducts {
         $license{'onetime'} = "One-Time";
     }
 
-    if ( my $licenses = join " ", map { "[$license{$_}]" } sort keys %license ) {
-		return $licenses;
+    if ( my $licenses = join " ", map { "[$license{$_}]" } sort keys %license )
+    {
+        return $licenses;
     }
 }
 
-sub is_active { 
-	if ( $buffer =~ m/active<br\/>/ ) {
-		if ( $buffer =~ m/15-DAY-TEST<\/td>/ ) { 
-			$Trial=1;
-		}
-		return "Active";
-	}
-	if ( $buffer =~ /expired on<br\/>/ ) {
-		return "Expired - Please send to Customer Service.";
-	}
+sub is_active {
+    if ( $buffer =~ m/active<br\/>/ ) {
+        if ( $buffer =~ m/15-DAY-TEST<\/td>/ ) {
+            $Trial = 1;
+        }
+        return "Active";
+    }
+    if ( $buffer =~ /expired on<br\/>/ ) {
+        return "Expired - Please send to Customer Service.";
+    }
 }
 
-sub is_hostname_fqdn { 
-	$HOSTNAME = qx[ hostname -f ];
-	chomp($HOSTNAME);
-	if ( $HOSTNAME !~ /([\w-]+)\.([\w-]+)\.(\w+)/ ) {
-		return "No";
-	}
-	else {
-		return "Yes";
-	}
+sub is_hostname_fqdn {
+    $HOSTNAME = qx[ hostname -f ];
+    chomp($HOSTNAME);
+    if ( $HOSTNAME !~ /([\w-]+)\.([\w-]+)\.(\w+)/ ) {
+        return "No";
+    }
+    else {
+        return "Yes";
+    }
 }
 
-sub check_for_lisc_lock { 
-    return if(!(-e("/usr/local/cpanel/lisc.lock")));
-    push(@WARNINGS,"The /usr/local/cpanel/lisc.lock file present!");
+sub check_for_lisc_lock {
+    return if ( !( -e ("/usr/local/cpanel/lisc.lock") ) );
+    push( @WARNINGS, "The /usr/local/cpanel/lisc.lock file present!" );
 }
 
-sub check_for_trial { 
-	return unless(-e("/var/cpanel/trial"));
-	push(@WARNINGS,"The /var/cpanel/trial touchfile found and license is not a trial license") unless($Trial);
+sub check_for_trial {
+    return unless ( -e ("/var/cpanel/trial") );
+    push( @WARNINGS,
+"The /var/cpanel/trial touchfile found and license is not a trial license"
+    ) unless ($Trial);
 }
 
 sub check_hostsfile {
-    print_working("Checking /etc/hosts for $HOSTNAME") unless(! $verbose);
+    print_working("Checking /etc/hosts for $HOSTNAME") unless ( !$verbose );
     my $hostsfile = qx[ grep $HOSTNAME /etc/hosts ];
     if ( substr( $hostsfile, 0, 1 ) eq "#" ) {
-        push(@WARNINGS, "The $HOSTNAME appears to be commented out in the /etc/hosts file.");
+        push( @WARNINGS,
+            "The $HOSTNAME appears to be commented out in the /etc/hosts file."
+        );
         return;
     }
     if ($hostsfile) {
-		if ($verbose) { 
-        	print BOLD GREEN "\t\\_ $HOSTNAME was found in the /etc/hosts file\n";
-        	print BOLD CYAN "\t\t\\_ $hostsfile";
-		}
+        if ($verbose) {
+            print BOLD GREEN
+              "\t\\_ $HOSTNAME was found in the /etc/hosts file\n";
+            print BOLD CYAN "\t\t\\_ $hostsfile";
+        }
     }
     else {
-        push(@WARNINGS,"The $HOSTNAME was not found in the /etc/hosts file.");
+        push( @WARNINGS,
+            "The $HOSTNAME was not found in the /etc/hosts file." );
     }
 }
 
 sub check_for_accountinglog {
     print_working("Checking accounting.log file for first created account");
-    if (-e("/var/cpanel/accounting.log")) {
-        my $FirstAcct=qx[ grep ':CREATE:' /var/cpanel/accounting.log | head -1 ];
-        my $FirstAcctEnd = index($FirstAcct,":CREATE:",0);
-        my $FirstAcctDate = substr($FirstAcct,0,$FirstAcctEnd-0);
-        print BOLD CYAN "\t\\_ First account created on: " . YELLOW $FirstAcctDate . "\n";
+    if ( -e ("/var/cpanel/accounting.log") ) {
+        my $FirstAcct =
+          qx[ grep ':CREATE:' /var/cpanel/accounting.log | head -1 ];
+        my $FirstAcctEnd = index( $FirstAcct, ":CREATE:", 0 );
+        my $FirstAcctDate = substr( $FirstAcct, 0, $FirstAcctEnd - 0 );
+        print BOLD CYAN "\t\\_ First account created on: "
+          . YELLOW $FirstAcctDate . "\n";
     }
     else {
         print BOLD CYAN "\t\\_ None - Possible new install\n";
@@ -347,42 +378,46 @@ sub check_for_accountinglog {
 }
 
 sub get_envtype {
-	return if (! -e ( "/var/cpanel/envtype") );
-	$envtype=qx[ cat /var/cpanel/envtype ];
-    if (! $envtype) {
-		$envtype = "Unknown";
-		push(@WARNINGS, "Unknown envtype for this server");
+    return if ( !-e ("/var/cpanel/envtype") );
+    $envtype = qx[ cat /var/cpanel/envtype ];
+    if ( !$envtype ) {
+        $envtype = "Unknown";
+        push( @WARNINGS, "Unknown envtype for this server" );
     }
-   	print_working("This server's environment (envtype) is: $envtype");
+    print_working("This server's environment (envtype) is: $envtype");
 }
 
 sub get_mainip {
-    print_working("Obtaining contents of /var/cpanel/mainip:") unless(! $verbose);
-	my $mainip = qx[ cat /var/cpanel/mainip ];
+    print_working("Obtaining contents of /var/cpanel/mainip:")
+      unless ( !$verbose );
+    my $mainip = qx[ cat /var/cpanel/mainip ];
     chomp($mainip);
     if ($mainip) {
-        print_OK("\t\\_ " . $mainip . "\n") unless(! $verbose);
-		my $isOnServer = qx[ ip addr show | grep $mainip ];
-		chomp($isOnServer);
-		if ( !($isOnServer) ) {
-			print RED " [WARN] /var/cpanel/mainip [$mainip] is not bound to this server.";
-			push(@WARNINGS, "/var/cpanel/mainip [$mainip] not found to this server.");
-		}
-	}
-	else {
-		push(@WARNINGS,"The mainip in /var/cpanel/mainip [$mainip] seems to be missing");
-	}
+        print_OK( "\t\\_ " . $mainip . "\n" ) unless ( !$verbose );
+        my $isOnServer = qx[ ip addr show | grep $mainip ];
+        chomp($isOnServer);
+        if ( !($isOnServer) ) {
+            print RED
+" [WARN] /var/cpanel/mainip [$mainip] is not bound to this server.";
+            push( @WARNINGS,
+                "/var/cpanel/mainip [$mainip] not found to this server." );
+        }
+    }
+    else {
+        push( @WARNINGS,
+            "The mainip in /var/cpanel/mainip [$mainip] seems to be missing" );
+    }
 }
 
 sub get_ipinfo {
-	return unless($verbose);
-    my $ipinfoIP=$_[0];
+    return unless ($verbose);
+    my $ipinfoIP = $_[0];
     my $ipinfoline;
     print_working("Getting ipinfo for $ipinfoIP");
-    my @IPINFO=qx[ curl -s ipinfo.io/$ipinfoIP ];
-    foreach $ipinfoline(@IPINFO) {
+    my @IPINFO = qx[ curl -s ipinfo.io/$ipinfoIP ];
+    foreach $ipinfoline (@IPINFO) {
         chomp($ipinfoline);
-        if ($ipinfoline =~ m/{|}/) {
+        if ( $ipinfoline =~ m/{|}/ ) {
             next;
         }
         $ipinfoline =~ s/\"//g;
@@ -395,18 +430,24 @@ sub get_wwwacctconf_ip {
     my $conf = Cpanel::Config::LoadWwwAcctConf::loadwwwacctconf();
     $DEVinConf = $conf->{'ETHDEV'};
     my $wwwacctIP = $conf->{'ADDR'};
-	return unless($verbose);
-    print_working("Obtaining ADDR from /etc/wwwacct.conf file: " . CYAN $wwwacctIP);
+    return unless ($verbose);
+    print_working(
+        "Obtaining ADDR from /etc/wwwacct.conf file: " . CYAN $wwwacctIP);
 }
 
 sub get_logStats {
-	return unless($verbose);
-    my $expireCnt=qx[ grep -c '^The license is expired' /usr/local/cpanel/logs/license_log ];
-    my $activeCnt=qx[ grep -c '^The license has been activated too many times' /usr/local/cpanel/logs/license_log ];
-    my $failureCnt=qx[ grep -c 'License update failed' /usr/local/cpanel/logs/license_log ];
-    my $successCnt=qx[ grep -c 'License update succeeded' /usr/local/cpanel/logs/license_log ];
-    my $trialCnt=qx[ grep -c 'Already Used cPanel/WHM Trial License for this IP' /usr/local/cpanel/logs/license_log ];
-    my $TotTWRestarts=qx[ grep -c 'Restarting cpsrvd' /var/log/chkservd.log ];
+    return unless ($verbose);
+    my $expireCnt =
+qx[ grep -c '^The license is expired' /usr/local/cpanel/logs/license_log ];
+    my $activeCnt =
+qx[ grep -c '^The license has been activated too many times' /usr/local/cpanel/logs/license_log ];
+    my $failureCnt =
+      qx[ grep -c 'License update failed' /usr/local/cpanel/logs/license_log ];
+    my $successCnt =
+qx[ grep -c 'License update succeeded' /usr/local/cpanel/logs/license_log ];
+    my $trialCnt =
+qx[ grep -c 'Already Used cPanel/WHM Trial License for this IP' /usr/local/cpanel/logs/license_log ];
+    my $TotTWRestarts = qx[ grep -c 'Restarting cpsrvd' /var/log/chkservd.log ];
     chomp($expireCnt);
     chomp($activeCnt);
     chomp($failureCnt);
@@ -414,23 +455,35 @@ sub get_logStats {
     chomp($trialCnt);
     chomp($TotTWRestarts);
     print_working("Obtaining stats from license_log file:");
-    print BOLD CYAN "\t\\_ Total number of times license shows expired in license_log: " . MAGENTA $expireCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times license shows been activated too many times in license_log: " . MAGENTA $activeCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times license update shows failed in license_log: " . MAGENTA $failureCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times license update shows succeeded in license_log: " . MAGENTA $successCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times license update shows Already had a Trial License in license_log: " . MAGENTA $trialCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times chkservd has restarted cpsrvd: " . MAGENTA $TotTWRestarts . "\n";
+    print BOLD CYAN
+      "\t\\_ Total number of times license shows expired in license_log: "
+      . MAGENTA $expireCnt . "\n";
+    print BOLD CYAN
+"\t\\_ Total number of times license shows been activated too many times in license_log: "
+      . MAGENTA $activeCnt . "\n";
+    print BOLD CYAN
+      "\t\\_ Total number of times license update shows failed in license_log: "
+      . MAGENTA $failureCnt . "\n";
+    print BOLD CYAN
+"\t\\_ Total number of times license update shows succeeded in license_log: "
+      . MAGENTA $successCnt . "\n";
+    print BOLD CYAN
+"\t\\_ Total number of times license update shows Already had a Trial License in license_log: "
+      . MAGENTA $trialCnt . "\n";
+    print BOLD CYAN
+      "\t\\_ Total number of times chkservd has restarted cpsrvd: "
+      . MAGENTA $TotTWRestarts . "\n";
     return;
 }
 
 sub get_devices {
-    my ($device, $deviceline, $nicIP);
-    print_working("Obtaining NIC Devices:") unless (! $verbose);
+    my ( $device, $deviceline, $nicIP );
+    print_working("Obtaining NIC Devices:") unless ( !$verbose );
     my @DEVICES = qx[ ip -o link show ];
-    my $inConf=0;
+    my $inConf  = 0;
     foreach $deviceline (@DEVICES) {
         chomp($deviceline);
-        next if ($deviceline =~ /DOWN/);
+        next if ( $deviceline =~ /DOWN/ );
         ($device) = ( split( /\s+/, $deviceline ) )[1];
         chop($device);    ## Remove trailing colon
         if ( $device eq "lo" ) { next; }
@@ -438,71 +491,111 @@ sub get_devices {
         if ( -e ("/etc/sysconfig/network-scripts/ifcfg-$device") ) {
             my $if = IO::Interface::Simple->new($device);
             $nicIP = $if->address;
-            print BOLD MAGENTA ON_BLACK . "\t \\_ Ethernet Device Name: " . CYAN $device . "\n" unless(! $verbose);
-            print BOLD YELLOW . "\t\t \\_ Address: " . CYAN $nicIP . "\n" unless(! $verbose);
+            print BOLD MAGENTA ON_BLACK
+              . "\t \\_ Ethernet Device Name: "
+              . CYAN $device . "\n"
+              unless ( !$verbose );
+            print BOLD YELLOW . "\t\t \\_ Address: " . CYAN $nicIP . "\n"
+              unless ( !$verbose );
             my $MACVendor = getMAC( $if->hwaddr );
-            print BOLD YELLOW . "\t\t \\_ MAC: " . CYAN $if->hwaddr . " [" . $MACVendor . "]\n" unless(! $verbose);
-            print BOLD YELLOW . "\t\t \\_ Broadcast: " . CYAN $if->broadcast . "\n" unless(! $verbose);
-            print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n" unless(! $verbose);
-            print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n" unless(! $verbose);
-            arping_check($device,$nicIP);
+            print BOLD YELLOW
+              . "\t\t \\_ MAC: "
+              . CYAN $if->hwaddr . " ["
+              . $MACVendor . "]\n"
+              unless ( !$verbose );
+            print BOLD YELLOW
+              . "\t\t \\_ Broadcast: "
+              . CYAN $if->broadcast . "\n"
+              unless ( !$verbose );
+            print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n"
+              unless ( !$verbose );
+            print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n"
+              unless ( !$verbose );
+            arping_check( $device, $nicIP );
             check_for_multiple_defroute($device);
+
             if ( $device eq "eth0" and $nicIP eq "" ) {
-            	push(@WARNINGS, "Device eth0 has no address - Seeing Waiting for devices to settle errors in license_log?");
+                push( @WARNINGS,
+"Device eth0 has no address - Seeing Waiting for devices to settle errors in license_log?"
+                );
             }
-            if ($device eq $DEVinConf) {
-            	$inConf=1;
+            if ( $device eq $DEVinConf ) {
+                $inConf = 1;
             }
             check_for_dhcp($device);
-		}
-	}
-	if (!$inConf) {
-		push(@WARNINGS, BOLD CYAN "ETHDEV in /etc/wwwacct.conf (" . WHITE $DEVinConf . BOLD CYAN ") was not found as an active device!");
-	}
-} 
+        }
+    }
+    if ( !$inConf ) {
+        push( @WARNINGS,
+                BOLD CYAN "ETHDEV in /etc/wwwacct.conf ("
+              . WHITE $DEVinConf
+              . BOLD CYAN ") was not found as an active device!" );
+    }
+}
 
 sub arping_check {
     my $nicdevice = $_[0];
     my $nicIPAddr = $_[1];
     return if ( $envtype eq "virtuozzo" );
-    return if ( $nicIPAddr eq "" or $nicdevice eq "");
+    return if ( $nicIPAddr eq "" or $nicdevice eq "" );
     my $ARPINGCMD = "";
-    $ARPINGCMD = qx[ arping -D -I $nicdevice -c 2 $nicIPAddr | grep 'Received 0' ];
+    $ARPINGCMD =
+      qx[ arping -D -I $nicdevice -c 2 $nicIPAddr | grep 'Received 0' ];
     chomp($ARPINGCMD);
     if ( $ARPINGCMD =~ m/Received 0/ ) {
-    	print_working( "Checking $nicdevice for multiple devices responding to $nicIPAddr: " . GREEN . "None") unless (! $verbose);
+        print_working(
+"Checking $nicdevice for multiple devices responding to $nicIPAddr: "
+              . GREEN
+              . "None" )
+          unless ( !$verbose );
     }
     else {
-        push(@WARNINGS, "The IP address $nicIPAddr may be listening on other devices! ($ARPINGCMD)");
+        push( @WARNINGS,
+"The IP address $nicIPAddr may be listening on other devices! ($ARPINGCMD)"
+        );
     }
 }
 
 sub check_for_multiple_defroute {
-    my $tcDevice=$_[0];
-    my $defroutecnt = qx[ grep '^DEFROUTE=yes' /etc/sysconfig/network-scripts/ifcfg-* | wc -l ];
+    my $tcDevice = $_[0];
+    my $defroutecnt =
+      qx[ grep '^DEFROUTE=yes' /etc/sysconfig/network-scripts/ifcfg-* | wc -l ];
     if ( $defroutecnt > 1 ) {
-        push(@WARNINGS, "Found multiple DEFROUTE=yes lines within the /etc/sysconfig/network-scripts/ifcfg-* files. [$tcDevice has one]");
+        push( @WARNINGS,
+"Found multiple DEFROUTE=yes lines within the /etc/sysconfig/network-scripts/ifcfg-* files. [$tcDevice has one]"
+        );
     }
     else {
-    	print_working("Checking for multiple DEFROUTE=yes lines: " . GREEN . "None") unless(! $verbose);
+        print_working(
+            "Checking for multiple DEFROUTE=yes lines: " . GREEN . "None" )
+          unless ( !$verbose );
     }
 }
 
 sub check_for_dhcp {
     my $nicdevice = $_[0];
-    print_working("Checking Networking Configs For DHCP:") unless(! $verbose);
-    my $grep4dhcp = qx[ grep -i 'dhcp' /etc/sysconfig/network-scripts/ifcfg-$nicdevice ];
-    my $Look4NM_dhclient = qx[ ps fuax | egrep 'NetworkManager|dhclient' | grep -v grep ];
+    print_working("Checking Networking Configs For DHCP:") unless ( !$verbose );
+    my $grep4dhcp =
+      qx[ grep -i 'dhcp' /etc/sysconfig/network-scripts/ifcfg-$nicdevice ];
+    my $Look4NM_dhclient =
+      qx[ ps fuax | egrep 'NetworkManager|dhclient' | grep -v grep ];
     if ($grep4dhcp) {
-		print RED "\t\\_ NIC Device " . $nicdevice . " set for DHCP.\n" unless(! $verbose);
-        push(@WARNINGS, "NIC Device " . $nicdevice . " has DHCP config. May cause automatic IP/Hostname changes.");
+        print RED "\t\\_ NIC Device " . $nicdevice . " set for DHCP.\n"
+          unless ( !$verbose );
+        push( @WARNINGS,
+                "NIC Device "
+              . $nicdevice
+              . " has DHCP config. May cause automatic IP/Hostname changes." );
     }
     if ($Look4NM_dhclient) {
-		print RED "\t\\_ NetworkManager/dhclient process found.\n" unless(! $verbose);
-        push(@WARNINGS, "Found NetworkManager/dhclient processes running. May cause automatic IP/Hostname changes.");
+        print RED "\t\\_ NetworkManager/dhclient process found.\n"
+          unless ( !$verbose );
+        push( @WARNINGS,
+"Found NetworkManager/dhclient processes running. May cause automatic IP/Hostname changes."
+        );
     }
     if ( !$grep4dhcp and !$Look4NM_dhclient ) {
-        print BOLD GREEN "\t \\_ None Found\n" unless(! $verbose);
+        print BOLD GREEN "\t \\_ None Found\n" unless ( !$verbose );
     }
 }
 
@@ -526,21 +619,28 @@ sub url_encode {
 sub run_check_valid_server_hostname {
     my $HostnameValid = Cpanel::Validate::Hostname::is_valid($HOSTNAME);
     if ($HostnameValid) {
-    	print_working("Checking For Valid Server Hostname: " . GREEN "OK") unless(! $verbose);
+        print_working( "Checking For Valid Server Hostname: " . GREEN "OK" )
+          unless ( !$verbose );
     }
     else {
-        push(@WARNINGS, "The " . $HOSTNAME . " does not appear to be a valid hostname!");
+        push( @WARNINGS,
+            "The " . $HOSTNAME . " does not appear to be a valid hostname!" );
     }
 }
 
 sub check_kernel_hostname {
-    my $KERN_HOSTNAME = qx [ sysctl kernel.hostname | cut -d = -f2 2> /dev/null ];
+    my $KERN_HOSTNAME =
+      qx [ sysctl kernel.hostname | cut -d = -f2 2> /dev/null ];
     $KERN_HOSTNAME = alltrim($KERN_HOSTNAME);
     if ( $KERN_HOSTNAME eq $HOSTNAME ) {
-    	print_working( "Verifying if sysctl kernel.hostname matches " . $HOSTNAME . ": " . GREEN "OK" ) unless(! $verbose);
+        print_working( "Verifying if sysctl kernel.hostname matches "
+              . $HOSTNAME . ": "
+              . GREEN "OK" )
+          unless ( !$verbose );
     }
     else {
-        push(@WARNINGS, "The value in sysctl kernel.hostname does not match $HOSTNAME");
+        push( @WARNINGS,
+            "The value in sysctl kernel.hostname does not match $HOSTNAME" );
     }
 }
 
@@ -551,80 +651,111 @@ sub alltrim() {
 }
 
 sub display_etc_hostname {
-	return if (!("/etc/hostname"));
-	my $etchostname = qx[ cat /etc/hostname ];
-	chomp($etchostname);
-  	print_working("Checking for an /etc/hostname file: " . GREEN $etchostname) unless(! $verbose);
-	if ( $etchostname ne $HOSTNAME ) {
-		push(@WARNINGS, "Value in /etc/hostname [$etchostname] does not match servers hostname [$HOSTNAME]");
-	}
+    return if ( !( -e ("/etc/hostname") ) );
+    my $etchostname = qx[ cat /etc/hostname ];
+    chomp($etchostname);
+    print_working(
+        "Checking for an /etc/hostname file: Present - Contents are:")
+      unless ( !$verbose );
+    print BOLD GREEN "\t\\_ " . $etchostname . "\n" unless ( !$verbose );
+    if ( $etchostname ne $HOSTNAME ) {
+        push( @WARNINGS,
+"Value in /etc/hostname [$etchostname] does not match servers hostname [$HOSTNAME]"
+        );
+    }
 }
 
 sub get_network_hostname {
+    return if ( !( -e ("/etc/sysconfig/network") ) );
     my $networkhost = qx[ grep '^HOSTNAME=' /etc/sysconfig/network ];
     chomp($networkhost);
-    print_working("Obtaining the HOSTNAME setting from /etc/sysconfig/network: " . GREEN $networkhost) unless(! $verbose);
-    # THIS NEEDS TO CHECK FOR "HOSTNAME=" nothing else.  If not found, then move on.  
-	($networkhost)=(split(/=/,$networkhost))[1];
+    print_working(
+"Obtaining the HOSTNAME setting from /etc/sysconfig/network: Present - Contents are:"
+    ) unless ( !$verbose );
+    print BOLD GREEN "\t\\_ " . $networkhost . "\n" unless ( !$verbose );
+
+# THIS NEEDS TO CHECK FOR "HOSTNAME=" nothing else.  If not found, then move on.
+    ($networkhost) = ( split( /=/, $networkhost ) )[1];
     $networkhost =~ s/\"//g;
-	if ( $networkhost ne $HOSTNAME ) {
-		push(@WARNINGS, "HOSTNAME value in /etc/sysconfig/network [$networkhost] does not match servers hostname [$HOSTNAME]");
-	}
+    if ( $networkhost ne $HOSTNAME ) {
+        push( @WARNINGS,
+"HOSTNAME value in /etc/sysconfig/network [$networkhost] does not match servers hostname [$HOSTNAME]"
+        );
+    }
 }
 
 sub get_ip_of_hostname {
-	my $HOSTNAME_IP = qx[ dig +tries=2 +time=5 \@208.67.222.222 $HOSTNAME +short 2>/dev/null ];
-	chomp($HOSTNAME_IP);
-#    chop($HOSTNAME_IP);    ## Remove trailing period
-	my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($HOSTNAME_IP);
-	if (! $IPValid) { 
-		push(@WARNINGS, "Could not reverse $HOSTNAME to a valid IP address.");
-	}
-	if ( $HOSTNAME_IP eq $external_ip_address) { 
-    	print_working("IP for $HOSTNAME [$HOSTNAME_IP] matches servers IP [$external_ip_address]") unless(! $verbose);
-	}
-	else { 
-        push(@WARNINGS, "IP address for $HOSTNAME [$HOSTNAME_IP] does not match servers IP [$external_ip_address]");
-	}
-	if ($HOSTNAME_IP) { 
-		my $REVERSED_IP = qx[ dig +tries=2 +time=5 \@208.67.220.220 -x $HOSTNAME_IP +short 2>/dev/null ];
-		chomp($REVERSED_IP);
+    my $HOSTNAME_IP =
+      qx[ dig +tries=2 +time=5 \@208.67.222.222 $HOSTNAME +short 2>/dev/null ];
+    chomp($HOSTNAME_IP);
+
+    #    chop($HOSTNAME_IP);    ## Remove trailing period
+    my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($HOSTNAME_IP);
+    if ( !$IPValid ) {
+        push( @WARNINGS, "Could not reverse $HOSTNAME to a valid IP address." );
+    }
+    if ( $HOSTNAME_IP eq $external_ip_address ) {
+        print_working(
+"IP for $HOSTNAME [$HOSTNAME_IP] matches servers IP [$external_ip_address]"
+        ) unless ( !$verbose );
+    }
+    else {
+        push( @WARNINGS,
+"IP address for $HOSTNAME [$HOSTNAME_IP] does not match servers IP [$external_ip_address]"
+        );
+    }
+    if ($HOSTNAME_IP) {
+        my $REVERSED_IP =
+qx[ dig +tries=2 +time=5 \@208.67.220.220 -x $HOSTNAME_IP +short 2>/dev/null ];
+        chomp($REVERSED_IP);
         chop($REVERSED_IP);
-		if ($REVERSED_IP) {
-			print_working("Reversing IP [$HOSTNAME_IP]: " . GREEN $REVERSED_IP) unless(! $verbose);
-			if ($REVERSED_IP ne $HOSTNAME) { 
-				push(@WARNINGS, "Reverse of $HOSTNAME_IP [$REVERSED_IP] does not match $HOSTNAME");
-			}
-		}
-		else {
-			push(@WARNINGS, "Failed to reverse $HOSTNAME_IP back to $HOSTNAME");
-		}
-	}
+        if ($REVERSED_IP) {
+            print_working( "Reversing IP [$HOSTNAME_IP]: " . GREEN $REVERSED_IP)
+              unless ( !$verbose );
+            if ( $REVERSED_IP ne $HOSTNAME ) {
+                push( @WARNINGS,
+"Reverse of $HOSTNAME_IP [$REVERSED_IP] does not match $HOSTNAME"
+                );
+            }
+        }
+        else {
+            push( @WARNINGS,
+                "Failed to reverse $HOSTNAME_IP back to $HOSTNAME" );
+        }
+    }
 }
 
 sub check_if_hostname_resolves_locally {
-    my $LOCAL_HOSTNAME_IP = qx[ dig +tries=2 +time=5 $HOSTNAME +short 2>/dev/null ];
+    my $LOCAL_HOSTNAME_IP =
+      qx[ dig +tries=2 +time=5 $HOSTNAME +short 2>/dev/null ];
     chomp($LOCAL_HOSTNAME_IP);
-	print_working("Checking if $HOSTNAME resolves locally") unless (! $verbose);
+    print_working("Checking if $HOSTNAME resolves locally")
+      unless ( !$verbose );
     my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($LOCAL_HOSTNAME_IP);
-    if (! $IPValid) {
-		push(@WARNINGS, "Could not resolve $HOSTNAME locally");
-       	print RED "\t \\_ No\n" unless(! $verbose);
-		return;
-	}
-	else { 
-		if ($verbose) { 
-        	print BOLD GREEN "\t \\_ Yes [$LOCAL_HOSTNAME_IP]\n" unless(! $verbose);
-		}
-        print_working("Checking if $LOCAL_HOSTNAME_IP reverse back to $HOSTNAME: ") unless(! $verbose);
-        my $LOCAL_HOSTNAME_REVERSED = qx[ dig +tries=2 +time=5 -x $LOCAL_HOSTNAME_IP +short 2>/dev/null ];
+    if ( !$IPValid ) {
+        push( @WARNINGS, "Could not resolve $HOSTNAME locally" );
+        print RED "\t \\_ No\n" unless ( !$verbose );
+        return;
+    }
+    else {
+        if ($verbose) {
+            print BOLD GREEN "\t \\_ Yes [$LOCAL_HOSTNAME_IP]\n"
+              unless ( !$verbose );
+        }
+        print_working(
+            "Checking if $LOCAL_HOSTNAME_IP reverses back to $HOSTNAME: ")
+          unless ( !$verbose );
+        my $LOCAL_HOSTNAME_REVERSED =
+          qx[ dig +tries=2 +time=5 -x $LOCAL_HOSTNAME_IP +short 2>/dev/null ];
         chomp($LOCAL_HOSTNAME_REVERSED);
         chop($LOCAL_HOSTNAME_REVERSED);
         if ( $LOCAL_HOSTNAME_REVERSED eq $HOSTNAME ) {
-        	print BOLD GREEN "\t \\_ Yes\n" unless(! $verbose);
+            print BOLD GREEN "\t \\_ Yes\n" unless ( !$verbose );
         }
         else {
-			push(@WARNINGS, "$LOCAL_HOSTNAME_IP does not reverse back to $HOSTNAME");
+            print RED "\t \\_ No\n" unless ( !$verbose );
+            push( @WARNINGS,
+                "$LOCAL_HOSTNAME_IP does not reverse back to $HOSTNAME" );
         }
     }
 }
@@ -632,110 +763,135 @@ sub check_if_hostname_resolves_locally {
 sub check_file_for_odd_chars {
     my $TheFile = $_[0];
     return if !-e $TheFile;
-    my ($line, @invalid, $invalid);
-    print_working("Checking $TheFile for non-ascii characters:") unless(! $verbose);
+    my ( $line, @invalid, $invalid );
+    print_working("Checking $TheFile for non-ascii characters:")
+      unless ( !$verbose );
     open( HOSTS, $TheFile );
     my @DATA = <HOSTS>;
     close(HOSTS);
     my @invalid = undef;
     my $cnt     = 0;
+
     foreach $line (@DATA) {
         chomp($line);
         if ( $line =~ /[^!-~\s]/g ) {
             push( @invalid, "$line contains => [ $& ]" );
         }
     }
-	splice(@invalid,0,1);
+    splice( @invalid, 0, 1 );
     $cnt = @invalid;
     if ( $cnt > 0 ) {
-        push(@WARNINGS, "The $TheFile file has $cnt line(s) containing non-ascii characters - use --verbose to view.");
-		if ($verbose) { 
-        	foreach $invalid (@invalid) {
-            	chomp($invalid);
-            	print MAGENTA "\t\\_ $invalid\n";
-        	}
-    	}
-	}
-   	else {
-       	print_OK("\t\\_ All Good\n") unless(! $verbose);
-   	}
+        push( @WARNINGS,
+"The $TheFile file has $cnt line(s) containing non-ascii characters - use --verbose to view."
+        );
+        if ($verbose) {
+            foreach $invalid (@invalid) {
+                chomp($invalid);
+                print MAGENTA "\t\\_ $invalid\n";
+            }
+        }
+    }
+    else {
+        print_OK("\t\\_ All Good\n") unless ( !$verbose );
+    }
 }
 
 sub check_resolvconf {
     my $grep4NM = qx[ grep 'Generated by NetworkManager' /etc/resolv.conf ];
     if ($grep4NM) {
-        push(@WARNINGS, "/etc/resolv.conf was possibly Generated by NetworkManager - may cause resolution issues!");
+        push( @WARNINGS,
+"/etc/resolv.conf was possibly Generated by NetworkManager - may cause resolution issues!"
+        );
     }
     my $grep4invalidNS = qx[ grep 'nameserver 127.0.0.' /etc/resolv.conf ];
     if ($grep4invalidNS) {
-       	push(@WARNINGS, "/etc/resolv.conf has invalid nameserver value - may cause resolution issues!");
+        push( @WARNINGS,
+"/etc/resolv.conf has invalid nameserver value - may cause resolution issues!"
+        );
     }
-    if ( !$grep4NM and !$grep4invalidNS and $verbose) {
-		print_working("Checking /etc/resolv.conf for anomalies: ");
+    if ( !$grep4NM and !$grep4invalidNS and $verbose ) {
+        print_working("Checking /etc/resolv.conf for anomalies: ");
         print BOLD GREEN "\t\\_ Looks Good!\n";
     }
 }
 
 sub check_for_cloudcfg {
-    return if (!( -e ("/etc/cloud")));
+    return if ( !( -e ("/etc/cloud") ) );
     if ( -e ("/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg") ) {
-		if ($verbose) { 
-        	print_working("/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg " . GREEN "is present");
-        	return;
-		}
+        if ($verbose) {
+            print_working( "/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg "
+                  . GREEN "is present" );
+        }
     }
-    my $preserve_hostname = qx[ grep -srl 'preserve_hostname: true' /etc/cloud/* ];
+    my $preserve_hostname =
+      qx[ grep -srl 'preserve_hostname: true' /etc/cloud/* ];
     my $manageetchosts = qx[ grep -srl 'manage_etc_hosts: false' /etc/cloud/* ];
     if ($preserve_hostname) {
-		print BOLD GREEN "\t\\_ preserve_hostname is set to true in $preserve_hostname" unless(! $verbose);
+        print BOLD GREEN
+          "\t\\_ preserve_hostname is set to true in $preserve_hostname"
+          unless ( !$verbose );
     }
     else {
-        push(@WARNINGS, "(preserve_hostname not set within any file in /etc/cloud/cloud.cfg.d/");
+        push( @WARNINGS,
+"(preserve_hostname not set within any file in /etc/cloud/cloud.cfg.d/"
+        );
     }
     if ($manageetchosts) {
-		print BOLD GREEN "\t\\_ manage_etc_hosts is set to false in $manageetchosts" unless(! $verbose);
+        print BOLD GREEN
+          "\t\\_ manage_etc_hosts is set to false in $manageetchosts"
+          unless ( !$verbose );
     }
     else {
-        push(@WARNINGS, "manage_etc_hosts not set within any file in /etc/cloud/cloud.cfg.d/");
+        push( @WARNINGS,
+"manage_etc_hosts not set within any file in /etc/cloud/cloud.cfg.d/"
+        );
     }
 }
 
 sub check_for_dhclient_exit_hook {
-	return if (!(-e("/etc/dhcp/dhclient-exit-hooks.d/")));
-	print_working("Checking for /etc/dhcp/dhclient-exit-hooks.d/ scripts") unless(! $verbose);
-	if ( -e ("/etc/dhcp/dhclient-exit-hooks.d/zzz-set-hostname.sh")) {
-		print BOLD GREEN "\t\\_ zzz-set-hostname.sh is present\n" unless (! $verbose);
-		return;
-	}
-	else { 
-		print BOLD CYAN "\t\\_ zzz-set-hostname.sh not present\n" unless (! $verbose);
-	}
-	if ( -e ("/etc/dhcp/dhclient-exit-hooks.d/set-hostname.sh")) {
-		print BOLD GREEN "\t\\_ set-hostname.sh is present\n" unless (! $verbose);
-		return;
-	}
-	else { 
-		print BOLD CYAN "\t\\_ set-hostname.sh not present\n" unless (! $verbose);
-	}
-	if ($isGCE_IP) {
-		push(@WARNINGS,"Neither zzz-set-hostname.sh nor set-hostname.sh script was found - See: https://go.cpanel.net/cloudhostname [CPANEL-20617]");
-	}
-	if (-e("/etc/dhcp/dhclient.d/google_hostname.sh")) { 
-		push(@WARNINGS, "Found /etc/dhcp/dhclient.d/google_hostname.sh file - consider disabling this. Causes license issues!");
-	}
+    return if ( !( -e ("/etc/dhcp/dhclient-exit-hooks.d/") ) );
+    print_working("Checking for /etc/dhcp/dhclient-exit-hooks.d/ scripts")
+      unless ( !$verbose );
+    if ( -e ("/etc/dhcp/dhclient-exit-hooks.d/zzz-set-hostname.sh") ) {
+        print BOLD GREEN "\t\\_ zzz-set-hostname.sh is present\n"
+          unless ( !$verbose );
+    }
+    else {
+        print BOLD CYAN "\t\\_ zzz-set-hostname.sh not present\n"
+          unless ( !$verbose );
+    }
+    if ( -e ("/etc/dhcp/dhclient-exit-hooks.d/set-hostname.sh") ) {
+        print BOLD GREEN "\t\\_ set-hostname.sh is present\n"
+          unless ( !$verbose );
+    }
+    else {
+        print BOLD CYAN "\t\\_ set-hostname.sh not present\n"
+          unless ( !$verbose );
+    }
+    if ($isGCE_IP) {
+        push( @WARNINGS,
+"Neither zzz-set-hostname.sh nor set-hostname.sh script was found - See: https://go.cpanel.net/cloudhostname [CPANEL-20617]"
+        );
+    }
+    if ( -e ("/etc/dhcp/dhclient.d/google_hostname.sh") ) {
+        push( @WARNINGS,
+"Found /etc/dhcp/dhclient.d/google_hostname.sh file - consider disabling this. Causes license issues!"
+        );
+    }
 }
 
 sub getGCE_IPs {
-    my $chkIP=$_[0];
+    my $chkIP = $_[0];
     chomp($chkIP);
     my $second = NetAddr::IP->new($chkIP);
-    my @gce_subnets = qx[ curl -s https://raw.githubusercontent.com/CpanelInc/tech-cp_license_troubleshooter/master/list_gcp_iprange.sh | sh ];
+    my @gce_subnets =
+qx[ curl -s https://raw.githubusercontent.com/CpanelInc/tech-cp_license_troubleshooter/master/list_gcp_iprange.sh | sh ];
     my $first;
     my $line;
-    foreach $line(@gce_subnets) {
+    foreach $line (@gce_subnets) {
         chomp($line);
         $first = NetAddr::IP->new($line);
-        if ($second->within($first)) {
+        if ( $second->within($first) ) {
             return 1;
         }
     }
@@ -743,30 +899,36 @@ sub getGCE_IPs {
 }
 
 sub check_for_license_error {
-	return unless(-e("/usr/local/cpanel/logs/license_error.display"));
-    print_working("Found a license error: ") unless(! $verbose);
+    return unless ( -e ("/usr/local/cpanel/logs/license_error.display") );
+    print_working("Found a license error: ") unless ( !$verbose );
     open( LICERR, "/usr/local/cpanel/logs/license_error.display" );
     my @LICERR = <LICERR>;
     my $errline;
     close(LICERR);
+    my $toomany = 0;
     foreach $errline (@LICERR) {
-	    chomp($errline);
-        print RED "\t\\_ $errline\n" unless(! $verbose);
+        chomp($errline);
+        print RED "\t\\_ $errline\n" unless ( !$verbose );
         if ( $errline =~ m/activated too many times on different machines/ ) {
-			push(@WARNINGS, "This license has been activated too many times - ESCALATE TO L3!");
-		}
-		else { 
-			#push(@WARNINGS, "License Error: " . $errline);
-			push(@WARNINGS, "Please review the /usr/local/cpanel/logs/license_error.display file for additional license errors. ");
-		}	
+            push( @WARNINGS,
+"This license has been activated too many times - ESCALATE TO L3!"
+            );
+            $toomany = 1;
+        }
+    }
+    if ( $toomany == 0 ) {
+        push( @WARNINGS,
+"The /usr/local/cpanel/logs/license_error.display file contains additional license errors. "
+        );
     }
 }
 
 sub get_hostname_at_install {
     return if !-e "/var/log/cpanel-install.log";
-	return unless($verbose);
+    return unless ($verbose);
     print_working("Hostname at time of cPanel install was set to: ");
-    my $HOSTNAME_AT_INSTALL = qx[ grep 'Validating that the system hostname' /var/log/cpanel-install.log | cut -d \" \" -f12 | cut -d \"\'\" -f2 2> /dev/null ];
+    my $HOSTNAME_AT_INSTALL =
+qx[ grep 'Validating that the system hostname' /var/log/cpanel-install.log | cut -d \" \" -f12 | cut -d \"\'\" -f2 2> /dev/null ];
     chomp($HOSTNAME_AT_INSTALL);
     if ( !($HOSTNAME_AT_INSTALL) ) {
         print BOLD CYAN "\t\\_ Unknown\n";
@@ -777,45 +939,59 @@ sub get_hostname_at_install {
 }
 
 sub check_for_hostname_changes {
-	return unless($verbose);
-	print_working("Checking access_log for hostname changes:");
-	my ($allhostnames, $histline, @HOSTNAME_CHANGES, $histchange, $hostname_change, $hostname_date_change1, $hostname_date_change2);
-	my @accesslog_hostnames = qx[ grep 'dochangehostname?hostname' /usr/local/cpanel/logs/access_log ];
-	my $alhostcnt = @accesslog_hostnames;
-	foreach $allhostnames (@accesslog_hostnames) {
-		chomp($allhostnames);
-		($hostname_change) = ( split( /\s+/, $allhostnames ) )[6];
-		( $hostname_date_change1, $hostname_date_change2 ) =
-		( split( /\s+/, $allhostnames ) )[ 3, 4 ];
-		($hostname_change) = ( split( /=/, $hostname_change ) )[1];
-		if ($hostname_change) {
-			print BOLD CYAN "\t\\_ Changed to: " . $hostname_change . " on " . $hostname_date_change1 . " " . $hostname_date_change2 . "\n" unless ( $hostname_change eq "1" );
-		}
-	}
-	print_working("Checking /root/.bash_history for hostname changes:");
-	my @hostchangeHist;
-	my $histtime;
-	foreach $histline (@HISTORY) {
-		chomp($histline);
-		if ( substr( $histline, 0, 1 ) eq "#" ) {
-			$histtime = substr( $histline, 1 );
-		}
-		if ( $histline =~ m/\/usr\/local\/cpanel\/bin\/set_hostname |hostnamectl set-hostname |hostname / ) {
-			print BOLD CYAN "\t \\_ On " . scalar localtime($histtime) . " - " . $histline . "\n" unless ( $histline =~ m/grep|vim \/etc\/hostname|vi \/etc\/hostname|rm|\-f/ );
-		}
-	}
-	print_working("Checking /var/log/messages for hostname changes:");
-	my $messhost;
-	my @messlogRestarts = qx[ grep 'systemd-hostnamed: Changed host name to' /var/log/messages ];
-	my $messcnt = @messlogRestarts;
-	foreach $messhost(@messlogRestarts) {
-		chomp($messhost);
-		print BOLD CYAN "\t\\_ On: $messhost\n";
-	}
+    return unless ($verbose);
+    print_working("Checking access_log for hostname changes:");
+    my ( $allhostnames, $histline, @HOSTNAME_CHANGES, $histchange,
+        $hostname_change, $hostname_date_change1, $hostname_date_change2 );
+    my @accesslog_hostnames =
+      qx[ grep 'dochangehostname?hostname' /usr/local/cpanel/logs/access_log ];
+    my $alhostcnt = @accesslog_hostnames;
+    foreach $allhostnames (@accesslog_hostnames) {
+        chomp($allhostnames);
+        ($hostname_change) = ( split( /\s+/, $allhostnames ) )[6];
+        ( $hostname_date_change1, $hostname_date_change2 ) =
+          ( split( /\s+/, $allhostnames ) )[ 3, 4 ];
+        ($hostname_change) = ( split( /=/, $hostname_change ) )[1];
+        if ($hostname_change) {
+            print BOLD CYAN "\t\\_ Changed to: "
+              . $hostname_change . " on "
+              . $hostname_date_change1 . " "
+              . $hostname_date_change2 . "\n"
+              unless ( $hostname_change eq "1" );
+        }
+    }
+    print_working("Checking /root/.bash_history for hostname changes:");
+    my @hostchangeHist;
+    my $histtime;
+    foreach $histline (@HISTORY) {
+        chomp($histline);
+        if ( substr( $histline, 0, 1 ) eq "#" ) {
+            $histtime = substr( $histline, 1 );
+        }
+        if ( $histline =~
+m/\/usr\/local\/cpanel\/bin\/set_hostname |hostnamectl set-hostname |hostname /
+          )
+        {
+            print BOLD CYAN "\t \\_ On "
+              . scalar localtime($histtime) . " - "
+              . $histline . "\n"
+              unless ( $histline =~
+                m/grep|vim \/etc\/hostname|vi \/etc\/hostname|rm|\-f/ );
+        }
+    }
+    print_working("Checking /var/log/messages for hostname changes:");
+    my $messhost;
+    my @messlogRestarts =
+      qx[ grep 'systemd-hostnamed: Changed host name to' /var/log/messages ];
+    my $messcnt = @messlogRestarts;
+    foreach $messhost (@messlogRestarts) {
+        chomp($messhost);
+        print BOLD CYAN "\t\\_ On: $messhost\n";
+    }
 }
 
 sub check_for_cpkeyclt_from_cli {
-	return if (! $verbose);
+    return if ( !$verbose );
     my $histline;
     print_working("Checking /root/.bash_history for cpkeyclt:");
     my @cpkeycltINHist;
@@ -826,7 +1002,10 @@ sub check_for_cpkeyclt_from_cli {
             $histtime = substr( $histline, 1 );
         }
         if ( $histline =~ m/cpkeyclt/ ) {
-            push( @cpkeycltINHist, "\t\\_ On " . BOLD GREEN scalar localtime($histtime) . " - " . $histline );
+            push( @cpkeycltINHist,
+                    "\t\\_ On "
+                  . BOLD GREEN scalar localtime($histtime) . " - "
+                  . $histline );
         }
     }
     my $cpkeyInHistLine;
@@ -850,7 +1029,7 @@ qx[ grep 'License Update Request' /usr/local/cpanel/logs/license_log | tail -20 
 }
 
 sub loadHistory {
-	return if (!(-e "/root/.bash_history"));
+    return if ( !( -e "/root/.bash_history" ) );
     open( HISTORY, "/root/.bash_history" );
     @HISTORY = <HISTORY>;
     close(HISTORY);
@@ -858,37 +1037,46 @@ sub loadHistory {
 
 sub shenanigans {
     getHist();
-	chk_mounts();
-	chk_etc_hosts();
-	chk_fwdip();
-	chk_etc_ips();
-	chk_cgls();
-	chk_rclocal();
+    chk_mounts();
+    chk_etc_hosts();
+    chk_fwdip();
+    chk_etc_ips();
+    chk_cgls();
+    chk_rclocal();
 }
 
 sub chk_fwdip {
-	return if (!(-e("/var/cpanel/domainfwdip")));
-	my ($fwdip, @FWDIP);
-	open(FWDIP,"/var/cpanel/domainfwdip");
-	@FWDIP=<FWDIP>;
-	close(FWDIP);
-	foreach $fwdip(@FWDIP) {
-		chomp($fwdip);
-		if ($fwdip =~ m/208.74./) {
-			push(@WARNINGS, "Found $fwdip in /var/cpanel/domainfwdip file - ESCALATE TO L3!");
-		}
-	}
+    return if ( !( -e ("/var/cpanel/domainfwdip") ) );
+    my ( $fwdip, @FWDIP );
+    open( FWDIP, "/var/cpanel/domainfwdip" );
+    @FWDIP = <FWDIP>;
+    close(FWDIP);
+    foreach $fwdip (@FWDIP) {
+        chomp($fwdip);
+        if ( $fwdip =~ m/208.74./ ) {
+            push( @WARNINGS,
+                "Found $fwdip in /var/cpanel/domainfwdip file - ESCALATE TO L3!"
+            );
+        }
+    }
 }
 
 sub getHist {
-    my ($histline, $histtime);
+    my ( $histline, $histtime );
     foreach $histline (@HISTORY) {
         chomp($histline);
         if ( substr( $histline, 0, 1 ) eq "#" ) {
             $histtime = substr( $histline, 1 );
         }
-        if ( $histline =~ m/ip route |cpanel\.lisc|cpsanitycheck.so|sectools|3jenan|secinstall|update_cpanelv2|ip route del blackhole|license.onlinelic.net|\.\/s\.sh|tsocks \/usr\/local\/cpanel\/cpkeyclt/) {
-            push(@WARNINGS, "Found $histline in /root/.bash_history [" . scalar localtime($histtime) . "] - ESCALATE TO L3!") unless ( $histline =~ m/grep/ );
+        if ( $histline =~
+m/ip route |cpanel\.lisc|cpsanitycheck.so|sectools|3jenan|secinstall|update_cpanelv2|ip route del blackhole|license.onlinelic.net|\.\/s\.sh|tsocks \/usr\/local\/cpanel\/cpkeyclt/
+          )
+        {
+            push( @WARNINGS,
+                    "Found $histline in /root/.bash_history ["
+                  . scalar localtime($histtime)
+                  . "] - ESCALATE TO L3!" )
+              unless ( $histline =~ m/grep/ );
         }
     }
 }
@@ -900,105 +1088,131 @@ sub chk_etc_hosts {
     my $hostline;
     foreach $hostline (@HOSTS) {
         chomp($hostline);
-        if ( $hostline =~ m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net/) {
-            push(@WARNINGS, "Found $hostline in /etc/hosts - ESCALATE TO L3!");
+        if ( $hostline =~
+            m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net/
+          )
+        {
+            push( @WARNINGS,
+                "Found $hostline in /etc/hosts - ESCALATE TO L3!" );
         }
     }
 }
 
-sub chk_mounts { 
-	my $liscMounted=qx[ mount | grep 'lisc' ];
-	return unless($liscMounted);
-	push(@WARNINGS,"cpanel.lisc possibly mounted - ESCALATE TO L3!");
+sub chk_mounts {
+    my $liscMounted = qx[ mount | grep 'lisc' ];
+    return unless ($liscMounted);
+    push( @WARNINGS, "cpanel.lisc possibly mounted - ESCALATE TO L3!" );
 }
 
 sub chk_etc_ips {
-	my $ourIPinetcips=qx[ grep '208.74.' /etc/ips ];
-	return unless($ourIPinetcips);
-	push(@WARNINGS, "Found cPanel IP's within /etc/ips file - ESCALATE TO L3!");
+    my $ourIPinetcips = qx[ grep '208.74.' /etc/ips ];
+    return unless ($ourIPinetcips);
+    push( @WARNINGS,
+        "Found cPanel IP's within /etc/ips file - ESCALATE TO L3!" );
 }
 
 sub chk_cgls {
-	my $dir="/usr/local/cgls";
-	return unless(-e $dir and -d $dir);
-	push(@WARNINGS, "CGLS detected - ESCALATE TO L3!");
+    my $dir = "/usr/local/cgls";
+    return unless ( -e $dir and -d $dir );
+    push( @WARNINGS, "CGLS detected - ESCALATE TO L3!" );
 }
 
 sub chk_rclocal {
-	my $rcLocal=qx[ grep cpkeyclt /etc/rc.local ];
-	return unless($rcLocal);
-	push(@WARNINGS, "Detected cpkeyclt in /etc/rc.local - ESCALATE TO L3!");
+    my $rcLocal = qx[ grep cpkeyclt /etc/rc.local ];
+    return unless ($rcLocal);
+    push( @WARNINGS, "Detected cpkeyclt in /etc/rc.local - ESCALATE TO L3!" );
 }
 
-sub check_crons { 
-	print_working("Checking for cpkeyclt in cron related files") unless(! $verbose);
-	my ($ExistsInCronLog, $ExistsInCron);
-	if (-e("/etc/systemd/system/cron.service") and !-e("/var/log/cron")) {
-		$ExistsInCronLog =qx[ /usr/bin/journalctl | grep -i cron | grep cpkeyclt ];
-		chomp($ExistsInCronLog);
-		if ($ExistsInCronLog) {
-			print RED "\t\\_ Found cpkeyclt in systemd cron [journalctl]\n" unless(! $verbose);
-			push(@WARNINGS,"Found cpkeyclt in cron log file [journalctl]");
-		}
-	}
-	elsif (-e("/var/log/cron")) { 
-		$ExistsInCronLog =qx[ grep 'cpkeyclt' /var/log/cron ];
-		chomp($ExistsInCronLog);
-		if ($ExistsInCronLog) {
-			print RED "\t\\_ Found cpkeyclt in /var/log/cron\n" unless(! $verbose);
-			push(@WARNINGS,"Found cpkeyclt in cron log file");
-		}
-	}
-	else { 
-		print RED "\t\\_ No /var/log/cron file found and systemd cron.service not configured!\n" unless(! $verbose);
-		push(@WARNINGS,"No /var/log/cron file found and systemd cron.service not configured!");
-	}
-	$ExistsInCron = qx[ grep 'cpkeyclt' /var/spool/cron/* ];
-	chomp($ExistsInCron);
-	if ($ExistsInCron) { 	
-		print RED "\t\\_ cpkeyclt found in /var/spool/cron/ file [ $ExistsInCron ]\n" unless(! $verbose);
-		push(@WARNINGS,"cpkeyclt found in /var/spool/cron/ file [ $ExistsInCron ]");
-	}
-	$ExistsInCron = qx[ grep -srl 'cpkeyclt' /etc/cron.* ];
-	chomp($ExistsInCron);
-	if ($ExistsInCron) { 	
-		print RED "\t\\_ cpkeyclt found in one of the /etc/cron.* directories [ $ExistsInCron ]\n" unless(! $verbose);
-		push(@WARNINGS,"cpkeyclt found in one of the /etc/cron.* directories [ $ExistsInCron ]");
-	}
-	$ExistsInCron = qx[ grep 'cpkeyclt' /etc/crontab ];
-	chomp($ExistsInCron);
-	if ($ExistsInCron) { 	
-		print RED "\t\\_ cpkeyclt found in /etc/crontab\n" unless(! $verbose);
-		push(@WARNINGS,"cpkeyclt found in some /etc/crontab");
-	}
+sub check_crons {
+    print_working("Checking for cpkeyclt in cron related files")
+      unless ( !$verbose );
+    my ( $ExistsInCronLog, $ExistsInCron );
+    if ( -e ("/etc/systemd/system/cron.service") and !-e ("/var/log/cron") ) {
+        $ExistsInCronLog =
+          qx[ /usr/bin/journalctl | grep -i cron | grep cpkeyclt ];
+        chomp($ExistsInCronLog);
+        if ($ExistsInCronLog) {
+            print RED "\t\\_ Found cpkeyclt in systemd cron [journalctl]\n"
+              unless ( !$verbose );
+            push( @WARNINGS, "Found cpkeyclt in cron log file [journalctl]" );
+        }
+    }
+    elsif ( -e ("/var/log/cron") ) {
+        $ExistsInCronLog = qx[ grep 'cpkeyclt' /var/log/cron ];
+        chomp($ExistsInCronLog);
+        if ($ExistsInCronLog) {
+            print RED "\t\\_ Found cpkeyclt in /var/log/cron\n"
+              unless ( !$verbose );
+            push( @WARNINGS, "Found cpkeyclt in cron log file" );
+        }
+    }
+    else {
+        print RED
+"\t\\_ No /var/log/cron file found and systemd cron.service not configured!\n"
+          unless ( !$verbose );
+        push( @WARNINGS,
+"No /var/log/cron file found and systemd cron.service not configured!"
+        );
+    }
+    $ExistsInCron = qx[ grep 'cpkeyclt' /var/spool/cron/* ];
+    chomp($ExistsInCron);
+    if ($ExistsInCron) {
+        print RED
+"\t\\_ cpkeyclt found in /var/spool/cron/ file \n\t\t \\_ [ $ExistsInCron ]\n"
+          unless ( !$verbose );
+        push( @WARNINGS,
+"cpkeyclt found in /var/spool/cron/ file \n\t\t \\_ [ $ExistsInCron ]"
+        );
+    }
+    $ExistsInCron = qx[ grep -srl 'cpkeyclt' /etc/cron.* ];
+    chomp($ExistsInCron);
+    if ($ExistsInCron) {
+        print RED
+"\t\\_ cpkeyclt found in one of the /etc/cron.* directories \n\t\t \\_ [ $ExistsInCron ]\n"
+          unless ( !$verbose );
+        push( @WARNINGS,
+"cpkeyclt found in one of the /etc/cron.* directories \n\t\t \\_ [ $ExistsInCron ]"
+        );
+    }
+    $ExistsInCron = qx[ grep 'cpkeyclt' /etc/crontab ];
+    chomp($ExistsInCron);
+    if ($ExistsInCron) {
+        print RED "\t\\_ cpkeyclt found in /etc/crontab\n" unless ( !$verbose );
+        push( @WARNINGS, "cpkeyclt found in some /etc/crontab" );
+    }
 }
 
 sub check_for_cpnat {
-    print_working("Checking for existence of cpnat file (1:1 NAT)") unless(! $verbose);
+    print_working("Checking for existence of cpnat file (1:1 NAT)")
+      unless ( !$verbose );
     if ( -e ("/var/cpanel/cpnat") ) {
         open( CPNAT, "/var/cpanel/cpnat" );
         my @CPNAT = <CPNAT>;
         close(CPNAT);
         my $cpnatline = "";
-        print BOLD GREEN "\t\\_ Found one - contents are:\n" unless(! $verbose);
+        print BOLD GREEN "\t\\_ Found one - contents are:\n"
+          unless ( !$verbose );
         foreach $cpnatline (@CPNAT) {
             chomp($cpnatline);
-            print BOLD CYAN "\t\t\\_ " . $cpnatline . "\n" unless(! $verbose);
-			my ($publicIP,$privateIP)=(split(/\s+/,$cpnatline));
-			chomp($publicIP);
-			chomp($privateIP);
-			if ($publicIP eq $privateIP) { 
-				push(@WARNINGS, "cpnat file found but all publicly routeable addresses are the same as the local address - Not a NAT system");
-			}
+            print BOLD CYAN "\t\t\\_ " . $cpnatline . "\n" unless ( !$verbose );
+            my ( $publicIP, $privateIP ) = ( split( /\s+/, $cpnatline ) );
+            chomp($publicIP);
+            chomp($privateIP);
+            if ( $publicIP eq $privateIP ) {
+                push( @WARNINGS,
+"cpnat file found but all publicly routeable addresses are the same as the local address - Not a NAT system"
+                );
+            }
         }
     }
     else {
-        print BOLD GREEN "\t\\_ None\n" unless(! $verbose);
+        print BOLD GREEN "\t\\_ None\n" unless ( !$verbose );
     }
 }
 
 sub check_root_servers {
-    print_working("Checking if this server can resolve ROOT servers:") unless(! $verbose);
+    print_working("Checking if this server can resolve ROOT servers:")
+      unless ( !$verbose );
     my @ROOT      = qw( a b c d e f g h i j k l m );
     my $ROOT_HOST = ".root-servers.net";
     my $rootserver;
@@ -1006,17 +1220,17 @@ sub check_root_servers {
         $rootserver = $rootserver . $ROOT_HOST;
         my $GOOD = qx[ dig +tries=2 +time=5 $rootserver +short 2> /dev/null ];
         if ($GOOD) {
-            print_OK("\t \\_ $rootserver - Good!\n") unless(! $verbose);
+            print_OK("\t \\_ $rootserver - Good!\n") unless ( !$verbose );
         }
         else {
-            print_warn("\t \\_ $rootserver - Failed!") unless(! $verbose);
-			push(@WARNINGS, "Failed to resolve $rootserver"); 
+            print_warn("\t \\_ $rootserver - Failed!") unless ( !$verbose );
+            push( @WARNINGS, "Failed to resolve $rootserver" );
         }
     }
 }
 
 sub check_routing {
-	return if (! $verbose);
+    return if ( !$verbose );
     print_working("Displaying IP routing info (if any)");
     my @ROUTINGINFO = qx[ ip addr | grep 'inet ' 2> /dev/null ];
     my $routeline;
@@ -1026,7 +1240,8 @@ sub check_routing {
         my ($internal)  = ( split( /\//,  $internal1 ) )[0];
         if ( $internal eq "127.0.0.1" ) { next; }
         print BOLD MAGENTA ON_BLACK . "\t \\_ Internal: " . CYAN $internal;
-        my $external = qx[ wget -O - -q --tries=1 --timeout=2 --bind-address=$internal http://myip.cpanel.net/v1.0/ 2> /dev/null ];
+        my $external =
+qx[ wget -O - -q --tries=1 --timeout=2 --bind-address=$internal http://myip.cpanel.net/v1.0/ 2> /dev/null ];
         if ($external) {
             chomp($external);
             print BOLD MAGENTA ON_BLACK " / External: " . CYAN $external . "\n";
@@ -1037,44 +1252,66 @@ sub check_routing {
     }
 }
 
-sub check_auth_cpanel_resolution { 
-	print_working("Checking to see if auth.cpanel.net can resolve: ") unless(! $verbose);
-	my $authline;
-	my @AUTH_RESOLUTION = qx[ dig +tries=2 +time=5 auth.cpanel.net +short 2>/dev/null ];
-	my $cnt=@AUTH_RESOLUTION;
-	if ($cnt == 0) { 
-		print RED "\t\\_ Failed!\n" unless(! $verbose);
-		push(@WARNINGS, "This server cannot reach or resolve auth.cpanel.net");
-	}
-	else {
-		foreach $authline(@AUTH_RESOLUTION) { 
-			chomp($authline);
-			print BOLD GREEN "\t\\_ " . $authline . "\n" unless(! $verbose);
-		}
-	}
+sub check_auth_cpanel_resolution {
+    print_working("Checking to see if auth.cpanel.net can resolve: ")
+      unless ( !$verbose );
+    my $authline;
+    my @AUTH_RESOLUTION =
+      qx[ dig +tries=2 +time=5 auth.cpanel.net +short 2>/dev/null ];
+    my $cnt = @AUTH_RESOLUTION;
+    if ( $cnt == 0 ) {
+        print RED "\t\\_ Failed!\n" unless ( !$verbose );
+        push( @WARNINGS,
+            "This server cannot reach or resolve auth.cpanel.net" );
+    }
+    else {
+        foreach $authline (@AUTH_RESOLUTION) {
+            chomp($authline);
+            print BOLD GREEN "\t\\_ " . $authline . "\n" unless ( !$verbose );
+        }
+    }
 }
 
 sub check_iptables {
-	print_working("Checking if cPanel IP's (208.74.x.x) are blocked") unless(! $verbose);
-	my $IPTABLES_CHK = qx[ iptables -L -n | grep '^208.74.' | grep DROP ];
-	if ($IPTABLES_CHK) {
-		print RED "\t\\_ cPanel IP's may be blocked via IPTABLES\n" unless(! $verbose);
-		push(@WARNINGS, "cPanel IP's may be blocked via IPTABLES");
-	}
-	else {
-		print BOLD GREEN "\t\\_ Looks good!\n" unless(! $verbose);
-	}
-	my $DROPPORTCHK = qx[ iptables -L -n | egrep '2083|2082|2095|20962086|2087' | grep DROP ];
-	if ($DROPPORTCHK) {
-		print RED "\t\\_ Some cPanel ports may be blocked via IPTABLES\n" unless(! $verbose);
-		push(@WARNINGS, "cPanel ports may be blocked via IPTABLES Can cause cpsrvd to restart too often!");
-	}
+    print_working("Checking if cPanel IP's (208.74.x.x) are blocked")
+      unless ( !$verbose );
+    my $IPTABLES_CHK = qx[ iptables -L -n | grep '^208.74.' | grep DROP ];
+    if ($IPTABLES_CHK) {
+        print RED "\t\\_ cPanel IP's may be blocked via IPTABLES\n"
+          unless ( !$verbose );
+        push( @WARNINGS, "cPanel IP's may be blocked via IPTABLES" );
+    }
+    else {
+        print BOLD GREEN "\t\\_ Looks good!\n" unless ( !$verbose );
+    }
+    my $DROPPORTCHK =
+      qx[ iptables -L -n | egrep '2083|2082|2095|20962086|2087' | grep DROP ];
+    if ($DROPPORTCHK) {
+        print RED "\t\\_ Some cPanel ports may be blocked via IPTABLES\n"
+          unless ( !$verbose );
+        push( @WARNINGS,
+"cPanel ports may be blocked via IPTABLES Can cause cpsrvd to restart too often!"
+        );
+    }
 }
 
 sub check_other_ports {
-    print_working("Checking firewall (if license ports can access auth.cpanel.net)") unless(! $verbose);
+    print_working(
+        "Checking firewall (if license ports can access auth.cpanel.net)")
+      unless ( !$verbose );
     eval("use IO::Socket::PortState qw( check_ports )");
-    my %port_hash = ( tcp => { 2089 => {}, 80   => {}, 110  => {}, 143  => {}, 25   => {}, 23   => {}, 993  => {}, 995  => {}, });
+    my %port_hash = (
+        tcp => {
+            2089 => {},
+            80   => {},
+            110  => {},
+            143  => {},
+            25   => {},
+            23   => {},
+            993  => {},
+            995  => {},
+        }
+    );
     my $timeout = 5;
     my $host    = 'auth.cpanel.net';
     chomp($host);
@@ -1082,69 +1319,82 @@ sub check_other_ports {
     for my $port ( sort { $a <=> $b } keys %{ $host_hr->{tcp} } ) {
         my $yesno = $host_hr->{tcp}{$port}{open} ? GREEN "OK" : RED "Failed!";
         chomp($yesno);
-		if ($yesno =~ m/Failed!/) { 
-			push(@WARNINGS, "Could not reach port $port on auth.cpanel.net from this server");
-		}
-        print_OK( "\t \\_ " . $port . " - " . $yesno . "\n") unless (! $verbose);
+        if ( $yesno =~ m/Failed!/ ) {
+            push( @WARNINGS,
+                "Could not reach port $port on auth.cpanel.net from this server"
+            );
+        }
+        print_OK( "\t \\_ " . $port . " - " . $yesno . "\n" )
+          unless ( !$verbose );
     }
 }
 
-sub check_cpanel_lisc_file { 
-	if (! -e ( "$cPLiscFile")) {
-		push(@WARNINGS, "cpanel.lisc file is missing");
-		return;
-	}
-	print_working("Checking permissions on cpanel.lisc file: ") unless(! $verbose);
+sub check_cpanel_lisc_file {
+    if ( !-e ("$cPLiscFile") ) {
+        push( @WARNINGS, "cpanel.lisc file is missing" );
+        return;
+    }
+    print_working("Checking permissions on cpanel.lisc file: ")
+      unless ( !$verbose );
     my $statmode = qx[ stat -c "%a" $cPLiscFile ];
-	chomp($statmode);
+    chomp($statmode);
     if ( $statmode != 644 ) {
-        push(@WARNINGS, "Invalid permissions on /usr/local/cpanel/cpanel.lisc [" . $statmode . "] - Should be 644" );
+        push( @WARNINGS,
+                "Invalid permissions on /usr/local/cpanel/cpanel.lisc ["
+              . $statmode
+              . "] - Should be 644" );
     }
     else {
-        print BOLD GREEN "\t\\_ OK!\n" unless(! $verbose);
+        print BOLD GREEN "\t\\_ OK!\n" unless ( !$verbose );
     }
     my $age;
     $age = ( stat("$cPLiscFile") )[9];
     my $TimeDiff = $timenow - $age;
     if ( $TimeDiff > 604800 ) {
-        push(@WARNINGS, "$cPLiscFile file is older than 7 days!");
+        push( @WARNINGS, "$cPLiscFile file is older than 7 days!" );
     }
     my $attr = `/usr/bin/lsattr $cPLiscFile`;
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
-        push(@WARNINGS, "$cPLiscFile is immutable - ESCALATE TO L3!");
-	}
-	print_working("Checking if cpanel.lisc can be locked: ") unless(! $verbose);
-	my $Lockable = qx[ /usr/bin/flock -w 5 $cPLiscFile -c "echo 1" || echo "0" ];
-	chomp($Lockable);
-	if ( $Lockable ) {
-		print BOLD GREEN "\t\\_ Yes\n" unless(! $verbose);
-	}
-	else {
-		print RED "\t\\_ No\n" unless(! $verbose);
-		push(@WARNINGS, "Could not obtain lock on $cPLiscFile - ESCALATE TO L3!");
-	}
+        push( @WARNINGS, "$cPLiscFile is immutable - ESCALATE TO L3!" );
+    }
+    print_working("Checking if cpanel.lisc can be locked: ")
+      unless ( !$verbose );
+    my $Lockable =
+      qx[ /usr/bin/flock -w 5 $cPLiscFile -c "echo 1" || echo "0" ];
+    chomp($Lockable);
+    if ($Lockable) {
+        print BOLD GREEN "\t\\_ Yes\n" unless ( !$verbose );
+    }
+    else {
+        print RED "\t\\_ No\n" unless ( !$verbose );
+        push( @WARNINGS,
+            "Could not obtain lock on $cPLiscFile - ESCALATE TO L3!" );
+    }
 }
 
 sub run_rdate {
     return if ( $envtype eq "virtuozzo" );
-    print_working("Checking if rdate completes without error:") unless(! $verbose);
+    print_working("Checking if rdate completes without error:")
+      unless ( !$verbose );
     my $rdatesuccess = qx[ rdate -s rdate.cpanel.net ];
     if ($rdatesuccess) {
-        print RED "\t\\_ Error - $rdatesuccess\n" unless(! $verbose);
-		push(@WARNINGS, "rdate command failed! [$rdatesuccess]");
+        print RED "\t\\_ Error - $rdatesuccess\n" unless ( !$verbose );
+        push( @WARNINGS, "rdate command failed! [$rdatesuccess]" );
     }
     else {
-        print BOLD GREEN "\t\\_ Yes\n" unless(! $verbose);
+        print BOLD GREEN "\t\\_ Yes\n" unless ( !$verbose );
     }
 }
 
 sub chkCreds {
-	return if(-e("/var/cpanel/licenseid_credentials.json"));
-	push(@WARNINGS,	"licenseid_credentials.json file missing - is port 2083 inbound open?");
+    return if ( -e ("/var/cpanel/licenseid_credentials.json") );
+    push( @WARNINGS,
+        "licenseid_credentials.json file missing - is port 2083 inbound open?"
+    );
 }
 
 sub display_route {
-	return if (! $verbose);
+    return if ( !$verbose );
     print_working("Displaying route -n:");
     print BOLD YELLOW "\t \\ \n";
     system_formatted("route -n");
@@ -1157,71 +1407,91 @@ sub display_route {
 }
 
 sub get_cpsrvd_restarts {
-	return if (! $verbose);
+    return if ( !$verbose );
     print_working("Displaying last 20 cpsrvd restarts:");
     my $cpsrvdrestline;
-    my @CPSRVD_RESTARTS = qx[ grep 'Restarting cpsrvd daemon process' /usr/local/cpanel/logs/error_log | tail -20 ];
+    my @CPSRVD_RESTARTS =
+qx[ grep 'Restarting cpsrvd daemon process' /usr/local/cpanel/logs/error_log | tail -20 ];
     foreach $cpsrvdrestline (@CPSRVD_RESTARTS) {
         chomp($cpsrvdrestline);
-        my ( $restartdate, $restarttime, $restartdst ) = ( split( /\s+/, $cpsrvdrestline ) )[ 0, 1, 2 ];
-        print YELLOW "\t \\_ " . $restartdate . " " . $restarttime . " " . $restartdst . "\n";
+        my ( $restartdate, $restarttime, $restartdst ) =
+          ( split( /\s+/, $cpsrvdrestline ) )[ 0, 1, 2 ];
+        print YELLOW "\t \\_ "
+          . $restartdate . " "
+          . $restarttime . " "
+          . $restartdst . "\n";
     }
     print_working("Checking /root/.bash_history for restarts:");
     my $histline;
     foreach $histline (@HISTORY) {
         chomp($histline);
-        if (   $histline =~ m/cpanel.service/ or $histline =~ m/scripts\/restartsrv_cpsrvd/ or $histline =~ m/service cpanel restart/ or $histline =~ m/etc\/init.d\/cpanel/ ) {
-            print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n" unless ( $histline =~ m/grep/ );
+        if (   $histline =~ m/cpanel.service/
+            or $histline =~ m/scripts\/restartsrv_cpsrvd/
+            or $histline =~ m/service cpanel restart/
+            or $histline =~ m/etc\/init.d\/cpanel/ )
+        {
+            print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n"
+              unless ( $histline =~ m/grep/ );
         }
     }
 }
 
 sub get_last_reboots {
-	return if (! $verbose);
+    return if ( !$verbose );
     print_working("Getting Last 20 reboots:");
     my @LastReboots = qx[ last | grep reboot ];
-    my $cnt=0;
-    my ($rebootline, $kernel, $mday, $mon, $day, $hhmm);
-    foreach $rebootline(@LastReboots) {
+    my $cnt         = 0;
+    my ( $rebootline, $kernel, $mday, $mon, $day, $hhmm );
+    foreach $rebootline (@LastReboots) {
         chomp($rebootline);
-        ($kernel,$mday,$mon,$day,$hhmm)=(split(/\s+/,$rebootline))[3,4,5,6,7];
-        print YELLOW "\t \\_ Reboot detected with kernel $kernel On: $mday $mon $day $hhmm\n";
+        ( $kernel, $mday, $mon, $day, $hhmm ) =
+          ( split( /\s+/, $rebootline ) )[ 3, 4, 5, 6, 7 ];
+        print YELLOW
+"\t \\_ Reboot detected with kernel $kernel On: $mday $mon $day $hhmm\n";
         $cnt++;
-        if ($cnt >= 20) { last; }
+        if ( $cnt >= 20 ) { last; }
     }
 }
 
 sub getVerifyDATA {
-	return if (! $verbose);
+    return if ( !$verbose );
     print_working("https://verify.cpanel.net data for $external_ip_address");
-    my $DATAVerifyPage = qx[ curl -s "https://verify.cpanel.net/index.cgi?ip=$external_ip_address&nohtml=1" | grep 'active' ];
-	$DATAVerifyPage =~ s/\'//g;
-	$DATAVerifyPage =~ s/\, /\n\t\\_ /g;
-	$DATAVerifyPage =~ s/active/active\n/g;
+    my $DATAVerifyPage =
+qx[ curl -s "https://verify.cpanel.net/index.cgi?ip=$external_ip_address&nohtml=1" | grep 'active' ];
+    $DATAVerifyPage =~ s/\'//g;
+    $DATAVerifyPage =~ s/\, /\n\t\\_ /g;
+    $DATAVerifyPage =~ s/active/active\n/g;
     print BOLD GREEN $DATAVerifyPage;
 }
 
 sub getVerifyJSON {
-    print_working( "https://verify.cpanel.net JSON data for $external_ip_address \n");
-    my $JSONVerifyPage = qx[ curl -s "https://verify.cpanel.net/verifyFeed.cgi?json=1&ip=$external_ip_address" | python -mjson.tool ];
+    print_working(
+        "https://verify.cpanel.net JSON data for $external_ip_address \n");
+    my $JSONVerifyPage =
+qx[ curl -s "https://verify.cpanel.net/verifyFeed.cgi?json=1&ip=$external_ip_address" | python -mjson.tool ];
     print CYAN $JSONVerifyPage;
 }
 
-sub Usage { 
-	print WHITE "cplicensets [no options is default] displays basic info and any warnings found\n";
-	print WHITE "cplicensets --verbose displays all info\n";
-	print WHITE "cplicensets --verifypage displays https://verify.cpanel.net in JSON output and exits\n";
-	print WHITE "cplicensets --withlogs displays last 50 lines of license_log file\n";
-	print WHITE "cplicensets --skipdate skips date check which can sometimes fail\n";
-	print WHITE "cplicensets --help You're looking at it!\n";
-	print "</c>\n";
-	exit;
+sub Usage {
+    print WHITE
+"cplicensets [no options is default] displays basic info and any warnings found\n";
+    print WHITE "cplicensets --verbose displays all info\n";
+    print WHITE
+"cplicensets --verifypage displays https://verify.cpanel.net in JSON output and exits\n";
+    print WHITE
+      "cplicensets --withlogs displays last 50 lines of license_log file\n";
+    print WHITE
+      "cplicensets --skipdate skips date check which can sometimes fail\n";
+    print WHITE "cplicensets --help You're looking at it!\n";
+    print "</c>\n";
+    exit;
 }
 
 sub read_last_50_lines_of_license_log {
-    print_working("Displaying last 50 lines of /usr/local/cpanel/logs/license_log:");
+    print_working(
+        "Displaying last 50 lines of /usr/local/cpanel/logs/license_log:");
     my $lineswanted = 50;
-    my $filename = "/usr/local/cpanel/logs/license_log";
+    my $filename    = "/usr/local/cpanel/logs/license_log";
     my ( $line, $filesize, $seekpos, $numread, @lines );
     open F, $filename or die "Can't read $filename: $!\n";
     $filesize = -s $filename;
@@ -1238,7 +1508,8 @@ sub read_last_50_lines_of_license_log {
         }
         if ( $numread < $lineswanted ) {
             if ( $seekpos >= $filesize ) {
-                die "There aren't even $lineswanted lines in $filename - I got $numread\n";
+                die
+"There aren't even $lineswanted lines in $filename - I got $numread\n";
             }
             $seekpos *= 2;
             $seekpos = $filesize if $seekpos >= $filesize;
@@ -1249,44 +1520,70 @@ sub read_last_50_lines_of_license_log {
 }
 
 sub get_date {
-	return if ($skipdate);
-    print_working("Checking Date/Time:") unless(! $verbose);
+    return if ($skipdate);
+    print_working("Checking Date/Time:") unless ( !$verbose );
     my ($servertime) = ( split( /\./, clock_gettime(CLOCK_REALTIME) ) );
-    print BOLD GREEN ON_BLACK "\t \\_ Server Time: " . $servertime . " (" . scalar localtime($servertime) . ")\n" unless(! $verbose);
-    my ($utctime) = ( split( /\./, qx[ /usr/bin/curl -s https://cpaneltech.ninja/cgi-bin/date.pl ]));
+    print BOLD GREEN ON_BLACK "\t \\_ Server Time: "
+      . $servertime . " ("
+      . scalar localtime($servertime) . ")\n"
+      unless ( !$verbose );
+    my ($utctime) = (
+        split(
+            /\./,
+            qx[ /usr/bin/curl -s https://cpaneltech.ninja/cgi-bin/date.pl ]
+        )
+    );
     if ( $utctime eq "" ) {
-        ($utctime) = ( split( /\./, qx[ /usr/bin/curl -sk https://cpaneltech.ninja/cgi-bin/date.pl ]));
+        ($utctime) = (
+            split(
+                /\./,
+                qx[ /usr/bin/curl -sk https://cpaneltech.ninja/cgi-bin/date.pl ]
+            )
+        );
     }
     if ( $utctime eq "" ) {
         $utctime = "Could Not Retrieve! - check network/firewall\n";
-		push(@WARNINGS, "Could not retrieve Outside Location time - check network/firewall");
+        push( @WARNINGS,
+            "Could not retrieve Outside Location time - check network/firewall"
+        );
     }
     else {
-        print BOLD GREEN ON_BLACK "\t \\_ Outside Location: " . $utctime . " (" . scalar localtime($utctime) . ")\n" unless(! $verbose);
+        print BOLD GREEN ON_BLACK "\t \\_ Outside Location: "
+          . $utctime . " ("
+          . scalar localtime($utctime) . ")\n"
+          unless ( !$verbose );
         my $timediff = $servertime - $utctime;
         if ( $timediff != 0 ) {
             if ( $timediff < -5 or $timediff > 5 ) {
-                print_warn( "\t \\_ [WARN] - Date/Time is off my more than 5 seconds!\n") unless(! $verbose);
-                push(@WARNINGS, "Date/Time is off my more than 5 seconds!");
+                print_warn(
+                    "\t \\_ [WARN] - Date/Time is off my more than 5 seconds!\n"
+                ) unless ( !$verbose );
+                push( @WARNINGS, "Date/Time is off my more than 5 seconds!" );
             }
             else {
-                print_OK("\t \\_ [OK] - Date/Time is within 5 seconds!\n") unless(! $verbose);
+                print_OK("\t \\_ [OK] - Date/Time is within 5 seconds!\n")
+                  unless ( !$verbose );
             }
         }
     }
 }
 
 sub check_for_solo {
-	return if (!(-e "$cPLiscFile"));
+    return if ( !( -e "$cPLiscFile" ) );
     my $isSolo = CYAN "No";
-    my ($isSoloNum) = ( split( /\s+/, qx[ grep -a 'maxusers' $cPLiscFile ]))[1];
+    my ($isSoloNum) =
+      ( split( /\s+/, qx[ grep -a 'maxusers' $cPLiscFile ] ) )[1];
     if ( $isSoloNum == 1 ) {
         $isSolo = CYAN "Yes";
     }
-    print_working("Checking for solo license: $isSolo") unless(! $verbose);
-    my $TotalAccts = qx[ ls -a /var/cpanel/users | egrep -v 'cptkt|nobody|system|\.' | wc -l ];
+
+    print_working("Is this a SOLO license: $isSolo");
+    my $TotalAccts =
+      qx[ ls -a /var/cpanel/users | egrep -v 'cptkt|nobody|system|\.' | wc -l ];
     if ( $TotalAccts > 1 and $isSoloNum == 1 ) {
-        push(@WARNINGS, "SOLO LICENSE WITH MORE THAN 1 ACCOUNT DETECTED!!! [HAN SHOT FIRST!]");
+        push( @WARNINGS,
+"SOLO LICENSE WITH MORE THAN 1 ACCOUNT DETECTED!!! [ESCALATE TO L3!]"
+        );
     }
 }
 
