@@ -548,8 +548,6 @@ sub get_devices {
 sub arping_check {
     my $nicdevice = $_[0];
     my $nicIPAddr = $_[1];
-
-    #return if ( $envtype eq "virtuozzo" );
     return if ( $envtype =~ m/virtuozzo|vzcontainer/ );
     return if ( $nicIPAddr eq "" or $nicdevice eq "" );
     my $ARPINGCMD = "";
@@ -568,7 +566,6 @@ sub arping_check {
 }
 
 sub check_for_multiple_defroute {
-
     print_working("Checking for multiple DEFROUTE=yes lines:") unless ( !$verbose );
     opendir( NETSCRIPTS, "/etc/sysconfig/network-scripts/" );
     my @defroutes = readdir(NETSCRIPTS);
@@ -586,8 +583,6 @@ sub check_for_multiple_defroute {
         }
 
     }
-
-    #    my $defroutecnt =
     if ( $defroutecnt > 1 ) {
         print RED . "\t \\_ Found " . WHITE $defroutecnt . " " . CYAN $defrouteline . "]" unless ( !$verbose );
         push(
@@ -598,7 +593,7 @@ sub check_for_multiple_defroute {
     else {
         print BOLD GREEN . "\t \\_ None" unless ( !$verbose );
     }
-    print "\n";
+    print "\n" unless ( !$verbose );
 }
 
 sub check_for_dhcp {
@@ -1254,7 +1249,7 @@ sub check_crons {
         $CronPositive = 1;
     }
     if ( !$CronPositive ) {
-        print BOLD GREEN "\t \\_ None\n";
+        print BOLD GREEN "\t \\_ None\n" unless( ! $verbose );
     }
 }
 
