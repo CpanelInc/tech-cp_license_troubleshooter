@@ -596,7 +596,7 @@ sub check_for_multiple_defroute {
         );
     }
     else {
-        print GREEN . "\t \\_ None" unless ( !$verbose );
+        print BOLD GREEN . "\t \\_ None" unless ( !$verbose );
     }
     print "\n";
 }
@@ -1024,7 +1024,7 @@ sub check_for_hostname_changes {
     my @messlogRestarts = qx[ grep 'systemd-hostnamed: Changed host name to' /var/log/messages ];
     my $messcnt         = @messlogRestarts;
     if ( $messcnt == 0 ) {
-        print GREEN "\t \\_ None\n";
+        print BOLD GREEN "\t \\_ None\n";
     }
     else {
         foreach $messhost (@messlogRestarts) {
@@ -1189,9 +1189,12 @@ sub chk_cgls3 {
 sub check_crons {
     print_working("Checking for cpkeyclt in cron related files")
       unless ( !$verbose );
-    my ( $ExistsInCronLog, $ExistsInCron );
-    my $cronservice = qx[ systemctl status crond.service | grep 'active' ];
-    chomp($cronservice);
+    my ( $ExistsInCronLog, $ExistsInCron, $CronPositive );
+    my $cronservice = "";
+    if ( -e ("/usr/bin/systemctl") ) {
+        $cronservice = qx[ systemctl status crond.service | grep 'active' ];
+        chomp($cronservice);
+    }
     if ( $cronservice and !-e ("/var/log/cron") ) {
         $ExistsInCronLog = qx[ /usr/bin/journalctl | grep -i cron | grep cpkeyclt ];
         chomp($ExistsInCronLog);
@@ -1199,6 +1202,7 @@ sub check_crons {
             print RED "\t\\_ Found cpkeyclt in systemd cron [journalctl]\n"
               unless ( !$verbose );
             push( @WARNINGS, "Found cpkeyclt in cron log file [journalctl]" );
+            $CronPositive = 1;
         }
     }
     elsif ( -e ("/var/log/cron") ) {
@@ -1208,6 +1212,7 @@ sub check_crons {
             print RED "\t\\_ Found cpkeyclt in /var/log/cron\n"
               unless ( !$verbose );
             push( @WARNINGS, "Found cpkeyclt in cron log file" );
+            $CronPositive = 1;
         }
     }
     else {
@@ -1217,6 +1222,7 @@ sub check_crons {
             @WARNINGS,
             "No /var/log/cron file found and systemd cron.service not configured!"
         );
+        $CronPositive = 1;
     }
     $ExistsInCron = qx[ grep 'cpkeyclt' /var/spool/cron/* ];
     chomp($ExistsInCron);
@@ -1227,6 +1233,7 @@ sub check_crons {
             @WARNINGS,
             "cpkeyclt found in /var/spool/cron/ file \n\t\t \\_ [ $ExistsInCron ]"
         );
+        $CronPositive = 1;
     }
     $ExistsInCron = qx[ grep -srl 'cpkeyclt' /etc/cron.* ];
     chomp($ExistsInCron);
@@ -1237,12 +1244,17 @@ sub check_crons {
             @WARNINGS,
             "cpkeyclt found in one of the /etc/cron.* directories \n\t\t \\_ [ $ExistsInCron ]"
         );
+        $CronPositive = 1;
     }
     $ExistsInCron = qx[ grep 'cpkeyclt' /etc/crontab ];
     chomp($ExistsInCron);
     if ($ExistsInCron) {
         print RED "\t\\_ cpkeyclt found in /etc/crontab\n" unless ( !$verbose );
         push( @WARNINGS, "cpkeyclt found in some /etc/crontab" );
+        $CronPositive = 1;
+    }
+    if ( !$CronPositive ) {
+        print BOLD GREEN "\t \\_ None\n";
     }
 }
 
