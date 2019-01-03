@@ -54,7 +54,7 @@ use Text::CSV;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
 
-my $version = "2.0.08";
+my $version = "2.0.09";
 
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -944,8 +944,8 @@ sub check_for_license_error {
         if ( $errline =~ m/activated too many times on different machines/ ) {
             push(
                 @WARNINGS,
-                "This license has been activated too many times - ESCALATE TO L3! unless(!i_am('cptech')"
-            );
+                "This license has been activated too many times - ESCALATE TO L3!"
+            ) unless (!i_am('cptech'));
             $toomany = 1;
         }
     }
@@ -981,7 +981,7 @@ sub check_for_hostname_changes {
     my @accesslog_hostnames = qx[ grep 'dochangehostname?hostname' /usr/local/cpanel/logs/access_log ];
     my $alhostcnt           = @accesslog_hostnames;
     if ( $alhostcnt == 0 ) {
-        print GREEN "\t \\_ None\n";
+        print BOLD GREEN "\t \\_ None\n";
     }
     else {
         foreach $allhostnames (@accesslog_hostnames) {
@@ -1055,7 +1055,7 @@ sub check_for_cpkeyclt_from_cli {
         }
     }
     else {
-        print BOLD CYAN "\t\\_ None\n";
+        print BOLD GREEN "\t\\_ None\n";
     }
     print_working("Displaying last 20 cpkeyclt calls from license_log: ");
     my @Last20cpkeyclt = qx[ grep 'License Update Request' /usr/local/cpanel/logs/license_log | tail -20 ];
