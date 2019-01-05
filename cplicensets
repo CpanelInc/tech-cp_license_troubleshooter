@@ -106,7 +106,7 @@ our $DEVinConf;
 our $envtype;
 
 print "<c>\n";
-print "cPanel License Troubleshooter - Version: $version\n";
+print MAGENTA "cPanel License Troubleshooter - Version: $version\n";
 if ($verifypage) {
     getVerifyJSON();
     print "</c>\n";
@@ -651,6 +651,14 @@ sub run_check_valid_server_hostname {
             "The " . $HOSTNAME . " does not appear to be a valid hostname!"
         );
     }
+	my ($FirstHost) = ( split( /\./, $HOSTNAME ) )[0];
+	my $FirstHostWarn = "";
+	if ( $FirstHost =~ m/whm|cpanel|webmail|webdisk|mail|autodiscover/ ) {
+    	$FirstHostWarn =
+      	RED "$HOSTNAME should not begin with a service subdomain ($FirstHost)\n\t\t \\_ See: "
+      	. CYAN "https://documentation.cpanel.net/display/76Docs/Change+Hostname";
+		push(@WARNINGS, $FirstHostWarn);
+	}
 }
 
 sub check_kernel_hostname {
@@ -981,7 +989,7 @@ sub check_for_hostname_changes {
     my @accesslog_hostnames = qx[ grep 'dochangehostname?hostname' /usr/local/cpanel/logs/access_log ];
     my $alhostcnt           = @accesslog_hostnames;
     if ( $alhostcnt == 0 ) {
-        print BOLD GREEN "\t \\_ None\n";
+        print GREEN "\t \\_ None\n";
     }
     else {
         foreach $allhostnames (@accesslog_hostnames) {
@@ -1055,7 +1063,7 @@ sub check_for_cpkeyclt_from_cli {
         }
     }
     else {
-        print BOLD GREEN "\t\\_ None\n";
+        print BOLD CYAN "\t\\_ None\n";
     }
     print_working("Displaying last 20 cpkeyclt calls from license_log: ");
     my @Last20cpkeyclt = qx[ grep 'License Update Request' /usr/local/cpanel/logs/license_log | tail -20 ];
