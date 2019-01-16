@@ -38,6 +38,8 @@ BEGIN {
     unshift @INC, '/usr/local/lib/perl5';
 }
 
+my $version = "2.0.10";
+
 use strict;
 use Socket;
 use IO::Socket::INET;
@@ -49,13 +51,12 @@ use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 use Cpanel::Validate::Hostname;
 use Cpanel::Validate::IP;
+use Cpanel::Config::LoadUserOwners ();
 use NetAddr::IP;
 use Text::CSV;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
-
-my $version = "2.0.09";
-
+use DateTime;
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
 
@@ -87,8 +88,12 @@ our $RUN_STATE;
 our $Trial      = 0;
 our $host       = 'verify.cpanel.net';
 our $helper_url = "https://" . $host;
+our $cgls       = 0;
 our $timenow    = time();
 our $isGCE_IP;
+our $isSoloNum    = 0;
+our $isDevelLic   = 0;
+our $isOneTimeLic = 0;
 
 module_sanity_check();
 get_external_ip();
@@ -122,7 +127,6 @@ Usage() if ($help);
 check_for_centOS5();
 print BOLD MAGENTA "--help show usage information\n";
 print BOLD MAGENTA "--verbose show everything [Default: show warnings only].\n\n";
-
 verify_license();
 loadHistory();
 my $LicenseActive    = is_active();
@@ -147,6 +151,12 @@ else {
 
 check_for_GCE();
 check_for_solo();
+if ($isDevelLic) {
+    print BOLD YELLOW "[INFO] - This is a development license.\n";
+}
+if ($isOneTimeLic) {
+    print BOLD YELLOW "[INFO] - This is a One-Time license.\n";
+}
 print_working( "Hostname is FQDN: " . CYAN $validFQDN . " [$HOSTNAME]" );
 check_for_accountinglog();
 get_envtype();
@@ -325,7 +335,15 @@ sub LicensedProducts {
     }
 
     if ( $buffer =~ /ONE TIME FEE/ ) {
-        $license{'onetime'} = "One-Time";
+        $isOneTimeLic = 1;
+    }
+
+    if ( $buffer =~ /MONTHLY-CPANEL-SOLO/ ) {
+        $isSoloNum = 1;
+    }
+
+    if ( $buffer =~ /DEVELOPMENT/ ) {
+        $isDevelLic = 1;
     }
 
     if ( my $licenses = join " ", map { "[$license{$_}]" } sort keys %license ) {
@@ -543,6 +561,13 @@ sub get_devices {
             RED "ETHDEV in /etc/wwwacct.conf (" . WHITE $DEVinConf . RED ") missing or undefined (blank) as an active device!"
         );
     }
+    my $ETHDEVcnt = qx[ grep -c ETHDEV /etc/wwwacct.conf ];
+    if ( $ETHDEVcnt > 1 ) {
+        push(
+            @WARNINGS,
+            RED "Multiple ETHDEV lines found in /etc/wwwacct.conf!"
+        );
+    }
 }
 
 sub arping_check {
@@ -651,14 +676,12 @@ sub run_check_valid_server_hostname {
             "The " . $HOSTNAME . " does not appear to be a valid hostname!"
         );
     }
-	my ($FirstHost) = ( split( /\./, $HOSTNAME ) )[0];
-	my $FirstHostWarn = "";
-	if ( $FirstHost =~ m/whm|cpanel|webmail|webdisk|mail|autodiscover/ ) {
-    	$FirstHostWarn =
-      	RED "$HOSTNAME should not begin with a service subdomain ($FirstHost)\n\t\t \\_ See: "
-      	. CYAN "https://documentation.cpanel.net/display/76Docs/Change+Hostname";
-		push(@WARNINGS, $FirstHostWarn);
-	}
+    my ($FirstHost) = ( split( /\./, $HOSTNAME ) )[0];
+    my $FirstHostWarn = "";
+    if ( $FirstHost =~ m/whm$|cpanel$|webmail$|webdisk$|mail$|autodiscover$/ ) {
+        $FirstHostWarn = RED "$HOSTNAME should not begin with a service subdomain ($FirstHost)\n\t\t \\_ See: " . CYAN "https://documentation.cpanel.net/display/76Docs/Change+Hostname";
+        push( @WARNINGS, $FirstHostWarn );
+    }
 }
 
 sub check_kernel_hostname {
@@ -950,10 +973,19 @@ sub check_for_license_error {
         chomp($errline);
         print RED "\t\\_ $errline\n" unless ( !$verbose );
         if ( $errline =~ m/activated too many times on different machines/ ) {
-            push(
-                @WARNINGS,
-                "This license has been activated too many times - ESCALATE TO L3!"
-            ) unless (!i_am('cptech'));
+            my $CSA = CSA();
+            if ($CSA) {
+                push(
+                    @WARNINGS,
+                    "This license has been activated too many times - Please send to Customer Service"
+                ) unless ( !iam('cptech') );
+            }
+            else {
+                push(
+                    @WARNINGS,
+                    "This license has been activated too many times - Please send to L3"
+                ) unless ( !iam('cptech') );
+            }
             $toomany = 1;
         }
     }
@@ -1105,8 +1137,8 @@ sub chk_fwdip {
         if ( $fwdip =~ m/208.74./ ) {
             push(
                 @WARNINGS,
-                "Found $fwdip in /var/cpanel/domainfwdip file - ESCALATE TO L3!"
-            ) unless ( !i_am('cptech') );
+                "Found $fwdip in /var/cpanel/domainfwdip file - Please send to L3"
+            ) unless ( !iam('cptech') );
         }
     }
 }
@@ -1121,8 +1153,8 @@ sub getHist {
         if ( $histline =~ m/ip route |cpanel\.lisc|cpsanitycheck.so|sectools|3jenan|secinstall|update_cpanelv2|ip route del blackhole|license.onlinelic.net|\.\/s\.sh|tsocks \/usr\/local\/cpanel\/cpkeyclt/ ) {
             push(
                 @WARNINGS,
-                "Found $histline in /root/.bash_history [" . scalar localtime($histtime) . "] - ESCALATE TO L3!"
-            ) unless ( $histline =~ m/grep/ or !i_am('cptech') );
+                "Found $histline in /root/.bash_history [" . scalar localtime($histtime) . "] - Please send to L3"
+            ) unless ( $histline =~ m/grep/ or !iam('cptech') );
         }
     }
 }
@@ -1137,8 +1169,8 @@ sub chk_etc_hosts {
         if ( $hostline =~ m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net/ ) {
             push(
                 @WARNINGS,
-                "Found $hostline in /etc/hosts - ESCALATE TO L3!"
-            ) unless ( !i_am('cptech') );
+                "Found $hostline in /etc/hosts - Please send to L3"
+            ) unless ( !iam('cptech') );
         }
     }
 }
@@ -1146,7 +1178,7 @@ sub chk_etc_hosts {
 sub chk_mounts {
     my $liscMounted = qx[ mount | grep 'lisc' ];
     return unless ($liscMounted);
-    push( @WARNINGS, "cpanel.lisc possibly mounted - ESCALATE TO L3!" ) unless ( !i_am('cptech') );
+    push( @WARNINGS, "cpanel.lisc possibly mounted - Please send to L3" ) unless ( !iam('cptech') );
 }
 
 sub chk_etc_ips {
@@ -1154,38 +1186,47 @@ sub chk_etc_ips {
     return unless ($ourIPinetcips);
     push(
         @WARNINGS,
-        "Found cPanel IP's within /etc/ips file - ESCALATE TO L3!"
-    ) unless ( !i_am('cptech') );
+        "Found cPanel IP's within /etc/ips file - Please send to L3"
+    ) unless ( !iam('cptech') );
 }
 
 sub chk_cgls {
     my $dir = "/usr/local/cgls";
     return unless ( -e $dir and -d $dir );
-    push( @WARNINGS, "ESCALATE TO L3! [cgls]" ) unless ( !i_am('cptech') );
+    push( @WARNINGS, "Please send to L3 [cgls binary found]" ) unless ( !iam('cptech') or $cgls );
+    $cgls = 1;
 }
 
 sub chk_cgls2 {
     my $dir = "/usr/bin/update_soft";
     return unless ( -e $dir and -d $dir );
-    push( @WARNINGS, "ESCALATE TO L3! [cgls]" ) unless ( !i_am('cptech') );
+    push( @WARNINGS, "Please send to L3 [cgls binary found]" ) unless ( !iam('cptech') or $cgls );
+    $cgls = 1;
 }
 
 sub chk_rclocal {
     return unless ( -e "/etc/rc.local" );
     my $rcLocal = qx[ grep cpkeyclt /etc/rc.local ];
     return unless ($rcLocal);
-    push( @WARNINGS, "Detected cpkeyclt in /etc/rc.local - ESCALATE TO L3!" ) unless ( !i_am('cptech') );
+    push( @WARNINGS, "Detected cpkeyclt in /etc/rc.local - Please send to L3" ) unless ( !iam('cptech') );
 }
 
 sub chk_cgls3 {
     if ( -e ("/etc/cron.d/cspcrons") ) {
-        push( @WARNINGS, "ESCALATE TO L3! [cgls]" ) unless ( !i_am('cptech') );
+        push( @WARNINGS, "Please send to L3 [cgls cron found]" ) unless ( !iam('cptech') or $cgls );
+        $cgls = 1;
+    }
+    if ( -e ("/etc/cron.d/cgls") ) {
+        push( @WARNINGS, "Please send to L3 [cgls cron found]" ) unless ( !iam('cptech') or $cgls );
+        $cgls = 1;
     }
     if ( -e ("/etc/cron.d/CSPcPanel") ) {
-        push( @WARNINGS, "ESCALATE TO L3! [cgls]" ) unless ( !i_am('cptech') );
+        push( @WARNINGS, "Please send to L3 [cgls cron found]" ) unless ( !iam('cptech') or $cgls );
+        $cgls = 1;
     }
     if ( -e ("/opt/cpanel/csp") ) {
-        push( @WARNINGS, "ESCALATE TO L3! [cgls]" ) unless ( !i_am('cptech') );
+        push( @WARNINGS, "Please send to L3 [cgls binary found]" ) unless ( !iam('cptech') or $cgls );
+        $cgls = 1;
     }
 }
 
@@ -1257,7 +1298,7 @@ sub check_crons {
         $CronPositive = 1;
     }
     if ( !$CronPositive ) {
-        print BOLD GREEN "\t \\_ None\n" unless( ! $verbose );
+        print BOLD GREEN "\t \\_ None\n" unless ( !$verbose );
     }
 }
 
@@ -1435,7 +1476,7 @@ sub check_cpanel_lisc_file {
     }
     my $attr = `/usr/bin/lsattr $cPLiscFile`;
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
-        push( @WARNINGS, "$cPLiscFile is immutable - ESCALATE TO L3!" ) unless ( !i_am('cptech') );
+        push( @WARNINGS, "$cPLiscFile is immutable - Please send to L3" ) unless ( !iam('cptech') );
     }
     print_working("Checking if cpanel.lisc can be locked: ")
       unless ( !$verbose );
@@ -1448,8 +1489,8 @@ sub check_cpanel_lisc_file {
         print RED "\t\\_ No\n" unless ( !$verbose );
         push(
             @WARNINGS,
-            "Could not obtain lock on $cPLiscFile - ESCALATE TO L3!"
-        ) unless ( !i_am('cptech') );
+            "Could not obtain lock on $cPLiscFile - Please send to L3"
+        ) unless ( !iam('cptech') );
     }
 }
 
@@ -1512,6 +1553,10 @@ sub get_cpsrvd_restarts {
             print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n"
               unless ( $histline =~ m/grep/ );
         }
+        if ( $histline =~ m/cgls/ ) {
+            push( @WARNINGS, "Please send to L3 [cgls found in history]" ) unless ( !iam('cptech') or $cgls );
+            $cgls = 1;
+        }
     }
 }
 
@@ -1534,11 +1579,13 @@ sub get_last_reboots {
 sub getVerifyDATA {
     return if ( !$verbose );
     print_working("https://verify.cpanel.net data for $external_ip_address");
-    my $DATAVerifyPage = qx[ curl -s "https://verify.cpanel.net/app/verify?ip=$external_ip_address&nohtml=1" | grep 'active' ];
-    $DATAVerifyPage =~ s/\'//g;
-    $DATAVerifyPage =~ s/\, /\n\t\\_ /g;
-    $DATAVerifyPage =~ s/active/active\n/g;
-    print BOLD GREEN $DATAVerifyPage;
+    my $regex          = qr{'([^']+)', '([^']+)', '([^']+)', '([^']+)', '([^']+)', '([^']+)'};
+    my @DATAVerifyPage = qx[ curl -s "https://verify.cpanel.net/app/verify?ip=$external_ip_address&nohtml=1" | grep 'active' ];
+    my $DataVerifyLine;
+    foreach $DataVerifyLine (@DATAVerifyPage) {
+        $DataVerifyLine =~ s/$regex/\t \\_ License ID: $1\n\t \\_ IP Address: $2\n\t \\_ License Type: $3\n\t \\_ Partner: $4\n\t \\_ Active Since $5\n\t \\_ Status: $6\n/;
+        print BOLD GREEN "$DataVerifyLine";
+    }
 }
 
 sub getVerifyJSON {
@@ -1633,21 +1680,27 @@ sub get_date {
 }
 
 sub check_for_solo {
-    return if ( !( -e "$cPLiscFile" ) );
     my $isSolo = CYAN "No";
-    my ($isSoloNum) =
-      ( split( /\s+/, qx[ grep -a 'maxusers' $cPLiscFile ] ) )[1];
     if ( $isSoloNum == 1 ) {
         $isSolo = CYAN "Yes";
     }
-
     print_working("Is this a SOLO license: $isSolo");
-    my $TotalAccts = qx[ ls -a /var/cpanel/users | egrep -v 'cptkt|nobody|system|\.' | wc -l ];
+    my $userowners = Cpanel::Config::LoadUserOwners::loadtrueuserowners( undef, 1, 1 );
+    my $TotalAccts = %{$userowners};
     if ( $TotalAccts > 1 and $isSoloNum == 1 ) {
-        push(
-            @WARNINGS,
-            "SOLO LICENSE WITH MORE THAN 1 ACCOUNT DETECTED!!! [ESCALATE TO L3!] unless(!i_am('cptech'))"
-        );
+        my $CSA = CSA();
+        if ($CSA) {
+            push(
+                @WARNINGS,
+                "SOLO license with more than 1 account - Please send to Customer Service"
+            ) unless ( !iam('cptech') );
+        }
+        else {
+            push(
+                @WARNINGS,
+                "SOLO license with more than 1 account - Please send to L3"
+            ) unless ( !iam('cptech') );
+        }
     }
 }
 
@@ -1673,12 +1726,32 @@ sub _init_run_state {
 
 sub _set_run_type {
     my ($type) = @_;
-    print STDERR "SSP DEBUG - Runtime type ${type} doesn't exist\n" and return unless exists $RUN_STATE->{type}->{$type};
+    print STDERR "Runtime type ${type} doesn't exist\n" and return unless exists $RUN_STATE->{type}->{$type};
     return $RUN_STATE->{STATE} |= $RUN_STATE->{type}->{$type};
 }
 
-sub i_am {
+sub iam {
     my $want = 0;
     grep { return 0 unless exists $RUN_STATE->{type}->{$_}; $want |= $RUN_STATE->{type}->{$_} } @_;
     return $want == ( $want & $RUN_STATE->{STATE} );
+}
+
+sub CSA {
+    my $dt    = DateTime->now( time_zone => 'America/Chicago' );
+    my $DAY   = $dt->strftime("%a");
+    my $HOUR  = $dt->hour;
+    my $STIME = 6;
+    my $QTIME;
+    if ( $DAY eq "Sat" or $DAY eq "Sun" ) {
+        $QTIME = 16;
+    }
+    else {
+        $QTIME = 18;
+    }
+    if ( $HOUR >= $STIME and $HOUR < $QTIME ) {
+        return 1;
+    }
+    else {
+        return 0;
+    }
 }
