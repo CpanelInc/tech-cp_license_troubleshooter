@@ -38,7 +38,8 @@ BEGIN {
     unshift @INC, '/usr/local/lib/perl5';
 }
 
-my $version = "2.0.10";
+my $version = "2.0.11";
+our $maxGCE = 7;
 
 use strict;
 use Socket;
@@ -157,7 +158,7 @@ if ($isDevelLic) {
 if ($isOneTimeLic) {
     print BOLD YELLOW "[INFO] - This is a One-Time license.\n";
 }
-print_working( "Hostname is FQDN: " . CYAN $validFQDN . " [$HOSTNAME]" );
+print_working( "Hostname is FQDN: " . $validFQDN . CYAN " [$HOSTNAME]" );
 check_for_accountinglog();
 get_envtype();
 
@@ -330,6 +331,10 @@ sub LicensedProducts {
         $license{'kernelcare'} = "KernelCare";
     }
 
+    if ( $buffer =~ /alt="Imunify360"/ ) {
+        $license{'imunify360'} = "Imunify360";
+    }
+
     if ( $buffer =~ /alt="LiteSpeed"/ ) {
         $license{'litespeed'} = "LiteSpeed";
     }
@@ -367,10 +372,11 @@ sub is_hostname_fqdn {
     $HOSTNAME = qx[ hostname -f ];
     chomp($HOSTNAME);
     if ( $HOSTNAME !~ /([\w-]+)\.([\w-]+)\.(\w+)/ ) {
-        return "No";
+        push( @WARNINGS, "Hostname [ $HOSTNAME ] may not be a valid FQDN\n\t\t\\_ (SEE: https://en.wikipedia.org/wiki/Fully_qualified_domain_name" );
+        return BOLD RED "No";
     }
     else {
-        return "Yes";
+        return GREEN "Yes";
     }
 }
 
@@ -624,8 +630,8 @@ sub check_for_multiple_defroute {
 sub check_for_dhcp {
     my $nicdevice = $_[0];
     print_working("Checking Networking Configs For DHCP:") unless ( !$verbose );
-    my $grep4dhcp        = qx[ grep -i 'dhcp' /etc/sysconfig/network-scripts/ifcfg-$nicdevice ];
-    my $Look4NM_dhclient = qx[ ps fuax | egrep 'NetworkManager|dhclient' | grep -v grep ];
+    my $grep4dhcp = qx[ grep -i 'dhcp' /etc/sysconfig/network-scripts/ifcfg-$nicdevice ];
+    my $Look4NM   = qx[ ps faux | grep 'NetworkManager' | grep -v grep ];
     if ($grep4dhcp) {
         print RED "\t\\_ NIC Device " . $nicdevice . " set for DHCP.\n"
           unless ( !$verbose );
@@ -634,15 +640,15 @@ sub check_for_dhcp {
             "NIC Device " . $nicdevice . " has DHCP config. May cause automatic IP/Hostname changes."
         );
     }
-    if ($Look4NM_dhclient) {
-        print RED "\t\\_ NetworkManager/dhclient process found.\n"
+    if ($Look4NM) {
+        print RED "\t\\_ NetworkManager process found.\n"
           unless ( !$verbose );
         push(
             @WARNINGS,
-            "Found NetworkManager/dhclient processes running. May cause automatic IP/Hostname changes."
+            "Found NetworkManager processes running. May cause automatic IP/Hostname changes.\n\t\t\\_ [ See: https://documentation.cpanel.net/display/CKB/How+to+Disable+Network+Manager ]"
         );
     }
-    if ( !$grep4dhcp and !$Look4NM_dhclient ) {
+    if ( !$grep4dhcp and !$Look4NM ) {
         print BOLD GREEN "\t \\_ None Found\n" unless ( !$verbose );
     }
 }
@@ -912,7 +918,7 @@ sub check_for_dhclient_exit_hook {
         $zzzsethostname = 1;
     }
     else {
-        print BOLD CYAN "\t\\_ zzz-set-hostname.sh not present\n"
+        print RED "\t\\_ zzz-set-hostname.sh not present\n"
           unless ( !$verbose );
     }
     if ( -e ("/etc/dhcp/dhclient-exit-hooks.d/set-hostname.sh") ) {
@@ -921,7 +927,7 @@ sub check_for_dhclient_exit_hook {
         $sethostname = 1;
     }
     else {
-        print BOLD CYAN "\t\\_ set-hostname.sh not present\n"
+        print RED "\t\\_ set-hostname.sh not present\n"
           unless ( !$verbose );
     }
     if ($isGCE_IP) {
@@ -935,6 +941,18 @@ sub check_for_dhclient_exit_hook {
                 "Neither zzz-set-hostname.sh nor set-hostname.sh script was found - See: https://go.cpanel.net/cloudhostname"
             );
         }
+        if ($sethostname) {
+            my $dhcpEHfile = qx[ grep $HOSTNAME /etc/dhcp/dhclient-exit-hooks.d/set-hostname.sh ];
+            if ( !$dhcpEHfile ) {
+                push( @WARNINGS, "The /etc/dhcp/dhclient-exit-hooks.d/set-hostname.sh file does not contain $HOSTNAME" );
+            }
+        }
+        if ($zzzsethostname) {
+            my $dhcpEHfile = qx[ grep $HOSTNAME /etc/dhcp/dhclient-exit-hooks.d/zzz-set-hostname.sh ];
+            if ( !$dhcpEHfile ) {
+                push( @WARNINGS, "The /etc/dhcp/dhclient-exit-hooks.d/zzz-set-hostname.sh file does not contain $HOSTNAME" );
+            }
+        }
     }
     if ( -e ("/etc/dhcp/dhclient.d/google_hostname.sh") ) {
         push(
@@ -947,18 +965,28 @@ sub check_for_dhclient_exit_hook {
 sub getGCE_IPs {
     my $chkIP = $_[0];
     chomp($chkIP);
-    my $second      = NetAddr::IP->new($chkIP);
-    my @gce_subnets = qx[ curl -s https://raw.githubusercontent.com/CpanelInc/tech-cp_license_troubleshooter/master/list_gcp_iprange.sh | sh ];
-    my $first;
-    my $line;
-    foreach $line (@gce_subnets) {
-        chomp($line);
-        $first = NetAddr::IP->new($line);
-        if ( $second->within($first) ) {
+    my $startGCE = 1;
+    my $GCEsubnet;
+    my @GCEsubnets;
+    my @GCE;
+    my $gceline;
+    while ( $startGCE <= $maxGCE ) {
+        @GCEsubnets = qx[ dig txt _cloud-netblocks$startGCE.googleusercontent.com +short | tr " " "\n" | grep ip4 | cut -f 2 -d : ];
+        foreach $gceline (@GCEsubnets) {
+            chomp($gceline);
+            push( @GCE, $gceline );
+        }
+        $startGCE++;
+    }
+    $gceline = "";
+    foreach $gceline (@GCE) {
+        chomp($gceline);
+        my $network = NetAddr::IP->new($gceline);
+        my $ip      = NetAddr::IP->new($chkIP);
+        if ( $ip->within($network) ) {
             return 1;
         }
     }
-    return 0;
 }
 
 sub check_for_license_error {
@@ -1124,6 +1152,7 @@ sub shenanigans {
     chk_cgls2();
     chk_cgls3();
     chk_rclocal();
+    proxy_chk();
 }
 
 sub chk_fwdip {
@@ -1753,5 +1782,12 @@ sub CSA {
     }
     else {
         return 0;
+    }
+}
+
+sub proxy_chk {
+    my $is_listening = qx[ netstat -nap | grep 'LISTEN' | grep '43467' ];
+    if ($is_listening) {
+        push( @WARNINGS, "Possible proxy found on port 43467 - Please send to L3" ) unless ( !iam('cptech') );
     }
 }
