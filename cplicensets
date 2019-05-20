@@ -1,5 +1,5 @@
 #!/usr/local/cpanel/3rdparty/bin/perl
-# Copyright 2018, cPanel, L.L.C.
+# Copyright 2019, cPanel, L.L.C.
 # All rights reserved.
 # http://cpanel.net
 #
@@ -33,12 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-BEGIN {
-    unshift @INC, '/usr/local/share/perl5';
-    unshift @INC, '/usr/local/lib/perl5';
-}
-
-my $version = "2.0.11";
+my $version = "2.0.12";
 our $maxGCE = 7;
 
 use strict;
@@ -71,7 +66,9 @@ elsif ( defined $ENV{'HISTFILE'} and index( $ENV{'HISTFILE'}, 'cpanel_ticket' ) 
 else {
     foreach ( @ENV{ 'SSH_CLIENT', 'SSH_CONNECTION' } ) {
         next unless defined $_;
-        next unless m{\A 208\.74\.12[0-7]}xms;
+
+        #next unless m{\A 208\.74\.12[0-7]}xms;
+        next unless m{\A (184\.94\.197\.[2-6]|208\.74\.123\.98)}xms;
         _set_run_type('cptech');
         last;
     }
@@ -92,9 +89,11 @@ our $helper_url = "https://" . $host;
 our $cgls       = 0;
 our $timenow    = time();
 our $isGCE_IP;
+our $isAWS_IP;
 our $isSoloNum    = 0;
 our $isDevelLic   = 0;
 our $isOneTimeLic = 0;
+our $sendtomsg    = "";
 
 module_sanity_check();
 get_external_ip();
@@ -151,6 +150,8 @@ else {
 }
 
 check_for_GCE();
+check_for_AWS();
+chk_for_cloud_ready();
 check_for_solo();
 if ($isDevelLic) {
     print BOLD YELLOW "[INFO] - This is a development license.\n";
@@ -192,8 +193,8 @@ shenanigans();
 get_date();
 check_crons();
 check_for_cpnat();
-check_root_servers();
 check_routing();
+check_root_servers();
 check_auth_cpanel_resolution();
 check_iptables();
 check_other_ports();
@@ -364,7 +365,8 @@ sub is_active {
         return "Active";
     }
     if ( $buffer =~ /expired on<br\/>/ ) {
-        return "Expired - Please send to Customer Service.";
+        $sendtomsg = CYAN "Please send to Customer Service";
+        return "Expired - " . $sendtomsg;
     }
 }
 
@@ -372,7 +374,7 @@ sub is_hostname_fqdn {
     $HOSTNAME = qx[ hostname -f ];
     chomp($HOSTNAME);
     if ( $HOSTNAME !~ /([\w-]+)\.([\w-]+)\.(\w+)/ ) {
-        push( @WARNINGS, "Hostname [ $HOSTNAME ] may not be a valid FQDN\n\t\t\\_ (SEE: https://en.wikipedia.org/wiki/Fully_qualified_domain_name" );
+        push( @WARNINGS, "Hostname [ $HOSTNAME ] may not be a valid FQDN\n\t\t\\_ SEE: https://en.wikipedia.org/wiki/Fully_qualified_domain_name" );
         return BOLD RED "No";
     }
     else {
@@ -455,10 +457,11 @@ sub get_mainip {
         my $isOnServer = qx[ ip addr show | grep $mainip ];
         chomp($isOnServer);
         if ( !($isOnServer) ) {
-            print RED " [WARN] /var/cpanel/mainip [$mainip] is not bound to this server.";
+            print RED " [WARN] /var/cpanel/mainip [$mainip] is not bound to this server.\n";
+            print YELLOW "\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck";
             push(
                 @WARNINGS,
-                "/var/cpanel/mainip [$mainip] not found to this server."
+                "/var/cpanel/mainip [$mainip] not bound to this server.\n\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck"
             );
         }
     }
@@ -497,12 +500,14 @@ sub get_wwwacctconf_ip {
 
 sub get_logStats {
     return unless ($verbose);
+    my $rootOwnedCnt  = qx[ grep -c 'confirm this connection was from a root owned process' /usr/local/cpanel/logs/license_log ];
     my $expireCnt     = qx[ grep -c '^The license is expired' /usr/local/cpanel/logs/license_log ];
     my $activeCnt     = qx[ grep -c '^The license has been activated too many times' /usr/local/cpanel/logs/license_log ];
     my $failureCnt    = qx[ grep -c 'License update failed' /usr/local/cpanel/logs/license_log ];
     my $successCnt    = qx[ grep -c 'License update succeeded' /usr/local/cpanel/logs/license_log ];
     my $trialCnt      = qx[ grep -c 'Already Used cPanel/WHM Trial License for this IP' /usr/local/cpanel/logs/license_log ];
     my $TotTWRestarts = qx[ grep -c 'Restarting cpsrvd' /var/log/chkservd.log ];
+    chomp($rootOwnedCnt);
     chomp($expireCnt);
     chomp($activeCnt);
     chomp($failureCnt);
@@ -515,6 +520,7 @@ sub get_logStats {
     print BOLD CYAN "\t\\_ Total number of times license update shows failed in license_log: " . MAGENTA $failureCnt . "\n";
     print BOLD CYAN "\t\\_ Total number of times license update shows succeeded in license_log: " . MAGENTA $successCnt . "\n";
     print BOLD CYAN "\t\\_ Total number of times license update shows Already had a Trial License in license_log: " . MAGENTA $trialCnt . "\n";
+    print BOLD CYAN "\t\\_ Total number of times license could not confirm it was from a root owned process in license_log: " . MAGENTA $rootOwnedCnt . "\n";
     print BOLD CYAN "\t\\_ Total number of times chkservd has restarted cpsrvd: " . MAGENTA $TotTWRestarts . "\n";
     return;
 }
@@ -564,7 +570,7 @@ sub get_devices {
     if ( !$inConf or $DEVinConf eq "" ) {
         push(
             @WARNINGS,
-            RED "ETHDEV in /etc/wwwacct.conf (" . WHITE $DEVinConf . RED ") missing or undefined (blank) as an active device!"
+            RED "ETHDEV in /etc/wwwacct.conf (" . WHITE $DEVinConf . RED ") missing or undefined (blank) as an active device!\n\t\t \\_ Should be set to " . CYAN . $device
         );
     }
     my $ETHDEVcnt = qx[ grep -c ETHDEV /etc/wwwacct.conf ];
@@ -784,7 +790,7 @@ sub get_ip_of_hostname {
 }
 
 sub check_if_hostname_resolves_locally {
-    my $LOCAL_HOSTNAME_IP = qx[ dig +tries=2 +time=5 $HOSTNAME +short | head -1 2>/dev/null ];
+    my $LOCAL_HOSTNAME_IP = qx[ dig \@$external_ip_address +tries=2 +time=5 $HOSTNAME +short | head -1 2>/dev/null ];
     chomp($LOCAL_HOSTNAME_IP);
     print_working("Checking if $HOSTNAME resolves locally")
       unless ( !$verbose );
@@ -989,6 +995,36 @@ sub getGCE_IPs {
     }
 }
 
+sub getAWS_IPs {
+    my $chkIP = $_[0];
+    chomp($chkIP);
+    my $AWSsubnet;
+    my $awsline;
+    my $junk;
+    my $AWSrange;
+    my @AWSsubnets;
+    my @AWS;
+    @AWSsubnets = qx [ curl -s https://ip-ranges.amazonaws.com/ip-ranges.json | grep 'ip_prefix' | cut -f2 -d : ];
+
+    foreach $awsline (@AWSsubnets) {
+        $awsline =~ s/\"//g;
+        $awsline =~ s/,//g;
+        $awsline =~ s/\s+//g;
+        $AWSrange = $awsline;
+        chomp($AWSrange);
+        push( @AWS, $AWSrange );
+    }
+    $awsline - "";
+    foreach $awsline (@AWS) {
+        chomp($awsline);
+        my $network = NetAddr::IP->new($awsline);
+        my $ip      = NetAddr::IP->new($chkIP);
+        if ( $ip->within($network) ) {
+            return 1;
+        }
+    }
+}
+
 sub check_for_license_error {
     return unless ( -e ("/usr/local/cpanel/logs/license_error.display") );
     print_working("Found a license error: ") unless ( !$verbose );
@@ -1003,15 +1039,17 @@ sub check_for_license_error {
         if ( $errline =~ m/activated too many times on different machines/ ) {
             my $CSA = CSA();
             if ($CSA) {
+                $sendtomsg = CYAN "Please send to Customer Service";
                 push(
                     @WARNINGS,
-                    "This license has been activated too many times - Please send to Customer Service"
+                    "This license has been activated too many times - " . $sendtomsg
                 ) unless ( !iam('cptech') );
             }
             else {
+                $sendtomsg = CYAN "Please send to L3";
                 push(
                     @WARNINGS,
-                    "This license has been activated too many times - Please send to L3"
+                    "This license has been activated too many times - " . $sendtomsg
                 ) unless ( !iam('cptech') );
             }
             $toomany = 1;
@@ -1164,26 +1202,32 @@ sub chk_fwdip {
     foreach $fwdip (@FWDIP) {
         chomp($fwdip);
         if ( $fwdip =~ m/208.74./ ) {
+            $sendtomsg = CYAN "Please send to L3";
             push(
                 @WARNINGS,
-                "Found $fwdip in /var/cpanel/domainfwdip file - Please send to L3"
+                "Found $fwdip in /var/cpanel/domainfwdip file - " . $sendtomsg
             ) unless ( !iam('cptech') );
         }
     }
 }
 
 sub getHist {
-    my ( $histline, $histtime );
+    my ( $histline, $histtime, $lookfor );
+    my @lookfor = qw( cpanel.lisc lic.bigconfig.com cpsanitycheck.so sectools 3jenan secinstall update_cpanelv2 license.onlinelic.net ./s.sh tsocks /usr/local/cpanel/cpkeyclt yoncu.com );
     foreach $histline (@HISTORY) {
         chomp($histline);
         if ( substr( $histline, 0, 1 ) eq "#" ) {
             $histtime = substr( $histline, 1 );
+            next;
         }
-        if ( $histline =~ m/ip route |cpanel\.lisc|cpsanitycheck.so|sectools|3jenan|secinstall|update_cpanelv2|ip route del blackhole|license.onlinelic.net|\.\/s\.sh|tsocks \/usr\/local\/cpanel\/cpkeyclt/ ) {
-            push(
-                @WARNINGS,
-                "Found $histline in /root/.bash_history [" . scalar localtime($histtime) . "] - Please send to L3"
-            ) unless ( $histline =~ m/grep/ or !iam('cptech') );
+        foreach $lookfor (@lookfor) {
+            if ( $lookfor eq $histline ) {
+                $sendtomsg = CYAN "Please send to L3";
+                push(
+                    @WARNINGS,
+                    "Found $histline in /root/.bash_history [" . scalar localtime($histtime) . "] CPANEL-22182 - " . $sendtomsg
+                ) unless ( $histline =~ m/grep/ or !iam('cptech') );
+            }
         }
     }
 }
@@ -1196,9 +1240,10 @@ sub chk_etc_hosts {
     foreach $hostline (@HOSTS) {
         chomp($hostline);
         if ( $hostline =~ m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net/ ) {
+            $sendtomsg = CYAN "Please send to L3";
             push(
                 @WARNINGS,
-                "Found $hostline in /etc/hosts - Please send to L3"
+                "Found $hostline in /etc/hosts - " . $sendtomsg
             ) unless ( !iam('cptech') );
         }
     }
@@ -1207,29 +1252,35 @@ sub chk_etc_hosts {
 sub chk_mounts {
     my $liscMounted = qx[ mount | grep 'lisc' ];
     return unless ($liscMounted);
-    push( @WARNINGS, "cpanel.lisc possibly mounted - Please send to L3" ) unless ( !iam('cptech') );
+    $sendtomsg = CYAN "Please send to L3";
+    push( @WARNINGS, "cpanel.lisc possibly mounted - " . $sendtomsg ) unless ( !iam('cptech') );
 }
 
 sub chk_etc_ips {
     my $ourIPinetcips = qx[ grep '208.74.' /etc/ips ];
     return unless ($ourIPinetcips);
+    $sendtomsg = CYAN "Please send to L3";
     push(
         @WARNINGS,
-        "Found cPanel IP's within /etc/ips file - Please send to L3"
+        "Found cPanel IP's within /etc/ips file - " . $sendtomsg
     ) unless ( !iam('cptech') );
 }
 
 sub chk_cgls {
-    my $dir = "/usr/local/cgls";
-    return unless ( -e $dir and -d $dir );
-    push( @WARNINGS, "Please send to L3 [cgls binary found]" ) unless ( !iam('cptech') or $cgls );
-    $cgls = 1;
+    my @dirs = qw( /usr/local/cgls /usr/bin/update_soft /usr/local/src/Lisans.php /usr/bin/chattrx /usr/local/cpanel/cpkeyclt.yedek /tmp/fkcplisc/verify/cpv.c );
+    for my $dir (@dirs) {
+        next if !-e $dir;
+        $sendtomsg = CYAN "Please send to L3";
+        push( @WARNINGS, "Found " . $dir . " " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
+        $cgls = 1;
+    }
 }
 
 sub chk_cgls2 {
-    my $dir = "/usr/bin/update_soft";
-    return unless ( -e $dir and -d $dir );
-    push( @WARNINGS, "Please send to L3 [cgls binary found]" ) unless ( !iam('cptech') or $cgls );
+    my $isASCII = qx[ file /usr/local/cpanel/cpkeyclt | grep 'ASCII' ];
+    return unless ($isASCII);
+    $sendtomsg = CYAN "Please send to L3";
+    push( @WARNINGS, $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
     $cgls = 1;
 }
 
@@ -1237,24 +1288,29 @@ sub chk_rclocal {
     return unless ( -e "/etc/rc.local" );
     my $rcLocal = qx[ grep cpkeyclt /etc/rc.local ];
     return unless ($rcLocal);
-    push( @WARNINGS, "Detected cpkeyclt in /etc/rc.local - Please send to L3" ) unless ( !iam('cptech') );
+    $sendtomsg = CYAN "Please send to L3";
+    push( @WARNINGS, "Detected cpkeyclt in /etc/rc.local [CPANEL-22182] - " . $sendtomsg ) unless ( !iam('cptech') );
 }
 
 sub chk_cgls3 {
     if ( -e ("/etc/cron.d/cspcrons") ) {
-        push( @WARNINGS, "Please send to L3 [cgls cron found]" ) unless ( !iam('cptech') or $cgls );
+        $sendtomsg = CYAN "Please send to L3";
+        push( @WARNINGS, "Found cspcrons " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
     if ( -e ("/etc/cron.d/cgls") ) {
-        push( @WARNINGS, "Please send to L3 [cgls cron found]" ) unless ( !iam('cptech') or $cgls );
+        $sendtomsg = CYAN "Please send to L3";
+        push( @WARNINGS, "Found cgls " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
     if ( -e ("/etc/cron.d/CSPcPanel") ) {
-        push( @WARNINGS, "Please send to L3 [cgls cron found]" ) unless ( !iam('cptech') or $cgls );
+        $sendtomsg = CYAN "Please send to L3";
+        push( @WARNINGS, "Found CSPcPanel " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
     if ( -e ("/opt/cpanel/csp") ) {
-        push( @WARNINGS, "Please send to L3 [cgls binary found]" ) unless ( !iam('cptech') or $cgls );
+        $sendtomsg = CYAN "Please send to L3";
+        push( @WARNINGS, "Found csp " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
 }
@@ -1505,7 +1561,8 @@ sub check_cpanel_lisc_file {
     }
     my $attr = `/usr/bin/lsattr $cPLiscFile`;
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
-        push( @WARNINGS, "$cPLiscFile is immutable - Please send to L3" ) unless ( !iam('cptech') );
+        $sendtomsg = CYAN "Please send to L3";
+        push( @WARNINGS, "$cPLiscFile is immutable - " . $sendtomsg ) unless ( !iam('cptech') );
     }
     print_working("Checking if cpanel.lisc can be locked: ")
       unless ( !$verbose );
@@ -1516,9 +1573,10 @@ sub check_cpanel_lisc_file {
     }
     else {
         print RED "\t\\_ No\n" unless ( !$verbose );
+        $sendtomsg = CYAN "Please send to L3";
         push(
             @WARNINGS,
-            "Could not obtain lock on $cPLiscFile - Please send to L3"
+            "Could not obtain lock on $cPLiscFile - " . $sendtomsg
         ) unless ( !iam('cptech') );
     }
 }
@@ -1583,7 +1641,8 @@ sub get_cpsrvd_restarts {
               unless ( $histline =~ m/grep/ );
         }
         if ( $histline =~ m/cgls/ ) {
-            push( @WARNINGS, "Please send to L3 [cgls found in history]" ) unless ( !iam('cptech') or $cgls );
+            $sendtomsg = CYAN "Please send to L3";
+            push( @WARNINGS, $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
             $cgls = 1;
         }
     }
@@ -1697,8 +1756,8 @@ sub get_date {
         my $timediff = $servertime - $utctime;
         if ( $timediff != 0 ) {
             if ( $timediff < -5 or $timediff > 5 ) {
-                print_warn("\t \\_ [WARN] - Date/Time is off my more than 5 seconds!\n") unless ( !$verbose );
-                push( @WARNINGS, "Date/Time is off my more than 5 seconds!" );
+                print_warn("\t \\_ [WARN] - Date/Time is off by more than 5 seconds!\n") unless ( !$verbose );
+                push( @WARNINGS, "Date/Time is off by more than 5 seconds!" );
             }
             else {
                 print_OK("\t \\_ [OK] - Date/Time is within 5 seconds!\n")
@@ -1719,15 +1778,17 @@ sub check_for_solo {
     if ( $TotalAccts > 1 and $isSoloNum == 1 ) {
         my $CSA = CSA();
         if ($CSA) {
+            $sendtomsg = CYAN "Please send to Customer Service";
             push(
                 @WARNINGS,
-                "SOLO license with more than 1 account - Please send to Customer Service"
+                "SOLO license with more than 1 account - " . $sendtomsg
             ) unless ( !iam('cptech') );
         }
         else {
+            $sendtomsg = CYAN "Please send to L3";
             push(
                 @WARNINGS,
-                "SOLO license with more than 1 account - Please send to L3"
+                "SOLO license with more than 1 account - " . $sendtomsg
             ) unless ( !iam('cptech') );
         }
     }
@@ -1737,6 +1798,21 @@ sub check_for_GCE {
     $isGCE_IP = getGCE_IPs($external_ip_address);
     my $isGCE = ($isGCE_IP) ? "Yes" : "No";
     print BOLD YELLOW "Running on Google Compute Engine (GCE): " . CYAN $isGCE . "\n";
+
+    # What does Google say the hostname is set to?
+    my $GCEHostname = qx[ curl --silent "http://metadata.google.internal/computeMetadata/v1/instance/attributes/hostname" -H "Metadata-Flavor: Google" ];
+    chomp($GCEHostname);
+    if ($GCEHostname) {
+        if ( $GCEHostname ne $HOSTNAME ) {
+            push( @WARNINGS, "Google set the hostname to: $GCEHostname which does not match $HOSTNAME" );
+        }
+    }
+}
+
+sub check_for_AWS {
+    $isAWS_IP = getAWS_IPs($external_ip_address);
+    my $isAWS = ($isAWS_IP) ? "Yes" : "No";
+    print BOLD YELLOW "Running on Amazon Web Services (AWS): " . CYAN $isAWS . "\n";
 }
 
 sub _init_run_state {
@@ -1788,6 +1864,23 @@ sub CSA {
 sub proxy_chk {
     my $is_listening = qx[ netstat -nap | grep 'LISTEN' | grep '43467' ];
     if ($is_listening) {
-        push( @WARNINGS, "Possible proxy found on port 43467 - Please send to L3" ) unless ( !iam('cptech') );
+        $sendtomsg = CYAN "Please send to L3";
+        push( @WARNINGS, "Possible proxy found on port 43467 - " . $sendtomsg ) unless ( !iam('cptech') );
+    }
+    my $troute = qx[ traceroute -T -p 2089 auth.cpanel.net | grep -v 'traceroute to' | wc -l ];
+    if ( $troute < 3 ) {
+        $sendtomsg = CYAN "Please send to L3";
+        push( @WARNINGS, "Possible proxy found - " . $sendtomsg ) unless ( !iam('cptech') );
+    }
+}
+
+sub chk_for_cloud_ready {
+    return if ( -e "/usr/local/cpanel/.cloud-ready" );
+    my $local_error = qx[ grep 'rc.local' /var/log/messages | grep 'Unknown error' | tail -1 ];
+    if ($local_error) {
+        push(
+            @WARNINGS,
+            ".cloud-ready touchfile not found under /usr/local/cpanel. Is hostname reverting? [NO-1573]"
+        );
     }
 }
