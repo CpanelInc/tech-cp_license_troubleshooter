@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.12";
+my $version = "2.0.13";
 our $maxGCE = 7;
 
 use strict;
@@ -1213,7 +1213,7 @@ sub chk_fwdip {
 
 sub getHist {
     my ( $histline, $histtime, $lookfor );
-    my @lookfor = qw( cpanel.lisc lic.bigconfig.com cpsanitycheck.so sectools 3jenan secinstall update_cpanelv2 license.onlinelic.net ./s.sh tsocks /usr/local/cpanel/cpkeyclt yoncu.com );
+    my @lookfor = qw( cpanel.lisc lic.bigconfig.com cpsanitycheck.so sectools 3jenan secinstall update_cpanelv2 license.onlinelic.net ./s.sh tsocks yoncu.com );
     foreach $histline (@HISTORY) {
         chomp($histline);
         if ( substr( $histline, 0, 1 ) eq "#" ) {
@@ -1586,7 +1586,7 @@ sub run_rdate {
     return if ( $envtype eq "vzcontainer" );
     print_working("Checking if rdate completes without error:")
       unless ( !$verbose );
-    my $rdatesuccess = qx[ rdate -s rdate.cpanel.net ];
+    my $rdatesuccess = qx[ rdate -s rdate.cpanel.net 2>&1 ];
     if ($rdatesuccess) {
         print RED "\t\\_ Error - $rdatesuccess\n" unless ( !$verbose );
         push( @WARNINGS, "rdate command failed! [$rdatesuccess]" );
