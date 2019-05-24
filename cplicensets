@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.13";
+my $version = "2.0.14";
 our $maxGCE = 7;
 
 use strict;
@@ -1799,12 +1799,14 @@ sub check_for_GCE {
     my $isGCE = ($isGCE_IP) ? "Yes" : "No";
     print BOLD YELLOW "Running on Google Compute Engine (GCE): " . CYAN $isGCE . "\n";
 
-    # What does Google say the hostname is set to?
-    my $GCEHostname = qx[ curl --silent "http://metadata.google.internal/computeMetadata/v1/instance/attributes/hostname" -H "Metadata-Flavor: Google" ];
-    chomp($GCEHostname);
-    if ($GCEHostname) {
-        if ( $GCEHostname ne $HOSTNAME ) {
-            push( @WARNINGS, "Google set the hostname to: $GCEHostname which does not match $HOSTNAME" );
+    if ($isGCE eq "Yes") { 
+        # What does Google say the hostname is set to?
+        my $GCEHostname = qx[ curl --silent "http://metadata.google.internal/computeMetadata/v1/instance/attributes/hostname" -H "Metadata-Flavor: Google" ];
+        chomp($GCEHostname);
+        if ($GCEHostname) {
+            if ( $GCEHostname ne $HOSTNAME ) {
+                push( @WARNINGS, "Google set the hostname to: $GCEHostname which does not match $HOSTNAME" );
+            }
         }
     }
 }
