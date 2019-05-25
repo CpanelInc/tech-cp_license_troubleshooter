@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.14";
+my $version = "2.0.15";
 our $maxGCE = 7;
 
 use strict;
@@ -624,7 +624,7 @@ sub check_for_multiple_defroute {
         print RED . "\t \\_ Found " . WHITE $defroutecnt . " " . CYAN $defrouteline . "]" unless ( !$verbose );
         push(
             @WARNINGS,
-            "Found multiple DEFROUTE=yes lines within the /etc/sysconfig/network-scripts/ifcfg-* files.\n\t\t \\_ Only the main NIC device should have a DEFROUTE defined."
+            "Found multiple DEFROUTE=yes lines within the /etc/sysconfig/network-scripts/ifcfg-* files.\n\t\t \\_ Only the main NIC device should have a DEFROUTE defined. [$defrouteline]"
         );
     }
     else {
@@ -1803,9 +1803,14 @@ sub check_for_GCE {
         # What does Google say the hostname is set to?
         my $GCEHostname = qx[ curl --silent "http://metadata.google.internal/computeMetadata/v1/instance/attributes/hostname" -H "Metadata-Flavor: Google" ];
         chomp($GCEHostname);
-        if ($GCEHostname) {
-            if ( $GCEHostname ne $HOSTNAME ) {
-                push( @WARNINGS, "Google set the hostname to: $GCEHostname which does not match $HOSTNAME" );
+        if ($GCEHostname =~ m/Error|404|DOCTYPE/) { 
+            return;
+        }
+        else { 
+            if ($GCEHostname) {
+                if ( $GCEHostname ne $HOSTNAME ) {
+                    push( @WARNINGS, "Google set the hostname to: $GCEHostname which does not match $HOSTNAME" );
+                }
             }
         }
     }
