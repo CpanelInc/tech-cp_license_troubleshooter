@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.15";
+my $version = "2.0.16";
 our $maxGCE = 7;
 
 use strict;
@@ -53,6 +53,7 @@ use Text::CSV;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
 use DateTime;
+our $L3=0;
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
 
@@ -185,11 +186,11 @@ check_if_hostname_resolves_locally();
 check_resolvconf();
 check_for_cloudcfg();
 check_for_dhclient_exit_hook();
+shenanigans();
 check_for_license_error();
 get_hostname_at_install();
 check_for_hostname_changes();
 check_for_cpkeyclt_from_cli();
-shenanigans();
 get_date();
 check_crons();
 check_for_cpnat();
@@ -365,7 +366,12 @@ sub is_active {
         return "Active";
     }
     if ( $buffer =~ /expired on<br\/>/ ) {
-        $sendtomsg = CYAN "Please send to Customer Service";
+		if ($L3) { 
+        	$sendtomsg = CYAN "Please send to L3";
+		}
+		else { 
+        	$sendtomsg = CYAN "Please send to Customer Service";
+		}
         return "Expired - " . $sendtomsg;
     }
 }
@@ -690,8 +696,8 @@ sub run_check_valid_server_hostname {
     }
     my ($FirstHost) = ( split( /\./, $HOSTNAME ) )[0];
     my $FirstHostWarn = "";
-    if ( $FirstHost =~ m/whm$|cpanel$|webmail$|webdisk$|mail$|autodiscover$/ ) {
-        $FirstHostWarn = RED "$HOSTNAME should not begin with a service subdomain ($FirstHost)\n\t\t \\_ See: " . CYAN "https://documentation.cpanel.net/display/76Docs/Change+Hostname";
+    if ( $FirstHost =~ m/^whm$|^cpanel$|^webmail$|^webdisk$|^mail$|^autodiscover$/ ) {
+        $FirstHostWarn = RED "$HOSTNAME should not begin with a service subdomain ($FirstHost)\n\t\t \\_ See: " . CYAN "https://documentation.cpanel.net/display/80Docs/Change+Hostname";
         push( @WARNINGS, $FirstHostWarn );
     }
 }
@@ -1039,7 +1045,12 @@ sub check_for_license_error {
         if ( $errline =~ m/activated too many times on different machines/ ) {
             my $CSA = CSA();
             if ($CSA) {
-                $sendtomsg = CYAN "Please send to Customer Service";
+				if ($L3) { 
+                	$sendtomsg = CYAN "Please send to L3"; 
+				}
+				else { 
+                	$sendtomsg = CYAN "Please send to Customer Service"; 
+				}
                 push(
                     @WARNINGS,
                     "This license has been activated too many times - " . $sendtomsg
@@ -1203,6 +1214,7 @@ sub chk_fwdip {
         chomp($fwdip);
         if ( $fwdip =~ m/208.74./ ) {
             $sendtomsg = CYAN "Please send to L3";
+            $L3=1;
             push(
                 @WARNINGS,
                 "Found $fwdip in /var/cpanel/domainfwdip file - " . $sendtomsg
@@ -1223,6 +1235,7 @@ sub getHist {
         foreach $lookfor (@lookfor) {
             if ( $lookfor eq $histline ) {
                 $sendtomsg = CYAN "Please send to L3";
+                $L3=1;
                 push(
                     @WARNINGS,
                     "Found $histline in /root/.bash_history [" . scalar localtime($histtime) . "] CPANEL-22182 - " . $sendtomsg
@@ -1241,6 +1254,7 @@ sub chk_etc_hosts {
         chomp($hostline);
         if ( $hostline =~ m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net/ ) {
             $sendtomsg = CYAN "Please send to L3";
+            $L3=1;
             push(
                 @WARNINGS,
                 "Found $hostline in /etc/hosts - " . $sendtomsg
@@ -1253,6 +1267,7 @@ sub chk_mounts {
     my $liscMounted = qx[ mount | grep 'lisc' ];
     return unless ($liscMounted);
     $sendtomsg = CYAN "Please send to L3";
+    $L3=1;
     push( @WARNINGS, "cpanel.lisc possibly mounted - " . $sendtomsg ) unless ( !iam('cptech') );
 }
 
@@ -1260,6 +1275,7 @@ sub chk_etc_ips {
     my $ourIPinetcips = qx[ grep '208.74.' /etc/ips ];
     return unless ($ourIPinetcips);
     $sendtomsg = CYAN "Please send to L3";
+    $L3=1;
     push(
         @WARNINGS,
         "Found cPanel IP's within /etc/ips file - " . $sendtomsg
@@ -1271,6 +1287,7 @@ sub chk_cgls {
     for my $dir (@dirs) {
         next if !-e $dir;
         $sendtomsg = CYAN "Please send to L3";
+        $L3=1;
         push( @WARNINGS, "Found " . $dir . " " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
@@ -1280,6 +1297,7 @@ sub chk_cgls2 {
     my $isASCII = qx[ file /usr/local/cpanel/cpkeyclt | grep 'ASCII' ];
     return unless ($isASCII);
     $sendtomsg = CYAN "Please send to L3";
+    $L3=1;
     push( @WARNINGS, $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
     $cgls = 1;
 }
@@ -1289,27 +1307,32 @@ sub chk_rclocal {
     my $rcLocal = qx[ grep cpkeyclt /etc/rc.local ];
     return unless ($rcLocal);
     $sendtomsg = CYAN "Please send to L3";
+    $L3=1;
     push( @WARNINGS, "Detected cpkeyclt in /etc/rc.local [CPANEL-22182] - " . $sendtomsg ) unless ( !iam('cptech') );
 }
 
 sub chk_cgls3 {
     if ( -e ("/etc/cron.d/cspcrons") ) {
         $sendtomsg = CYAN "Please send to L3";
+        $L3=1;
         push( @WARNINGS, "Found cspcrons " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
     if ( -e ("/etc/cron.d/cgls") ) {
         $sendtomsg = CYAN "Please send to L3";
+        $L3=1;
         push( @WARNINGS, "Found cgls " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
     if ( -e ("/etc/cron.d/CSPcPanel") ) {
         $sendtomsg = CYAN "Please send to L3";
+        $L3=1;
         push( @WARNINGS, "Found CSPcPanel " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
     if ( -e ("/opt/cpanel/csp") ) {
         $sendtomsg = CYAN "Please send to L3";
+        $L3=1;
         push( @WARNINGS, "Found csp " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
@@ -1562,6 +1585,7 @@ sub check_cpanel_lisc_file {
     my $attr = `/usr/bin/lsattr $cPLiscFile`;
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
         $sendtomsg = CYAN "Please send to L3";
+        $L3=1;
         push( @WARNINGS, "$cPLiscFile is immutable - " . $sendtomsg ) unless ( !iam('cptech') );
     }
     print_working("Checking if cpanel.lisc can be locked: ")
@@ -1574,6 +1598,7 @@ sub check_cpanel_lisc_file {
     else {
         print RED "\t\\_ No\n" unless ( !$verbose );
         $sendtomsg = CYAN "Please send to L3";
+        $L3=1;
         push(
             @WARNINGS,
             "Could not obtain lock on $cPLiscFile - " . $sendtomsg
@@ -1642,6 +1667,7 @@ sub get_cpsrvd_restarts {
         }
         if ( $histline =~ m/cgls/ ) {
             $sendtomsg = CYAN "Please send to L3";
+            $L3=1;
             push( @WARNINGS, $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
             $cgls = 1;
         }
@@ -1778,7 +1804,12 @@ sub check_for_solo {
     if ( $TotalAccts > 1 and $isSoloNum == 1 ) {
         my $CSA = CSA();
         if ($CSA) {
-            $sendtomsg = CYAN "Please send to Customer Service";
+			if ($L3) { 
+            	$sendtomsg = CYAN "Please send to L3"; 
+			}
+			else { 
+            	$sendtomsg = CYAN "Please send to Customer Service"; 
+			}
             push(
                 @WARNINGS,
                 "SOLO license with more than 1 account - " . $sendtomsg
@@ -1872,10 +1903,14 @@ sub proxy_chk {
     my $is_listening = qx[ netstat -nap | grep 'LISTEN' | grep '43467' ];
     if ($is_listening) {
         $sendtomsg = CYAN "Please send to L3";
+        $L3=1;
         push( @WARNINGS, "Possible proxy found on port 43467 - " . $sendtomsg ) unless ( !iam('cptech') );
     }
+    return if (! -e "/usr/bin/traceroute");
     my $troute = qx[ traceroute -T -p 2089 auth.cpanel.net | grep -v 'traceroute to' | wc -l ];
+	# RIGHT HERE
     if ( $troute < 3 ) {
+        $L3=1;
         $sendtomsg = CYAN "Please send to L3";
         push( @WARNINGS, "Possible proxy found - " . $sendtomsg ) unless ( !iam('cptech') );
     }
