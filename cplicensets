@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.16";
+my $version = "2.0.17";
 our $maxGCE = 7;
 
 use strict;
@@ -46,7 +46,7 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 use Cpanel::Validate::Hostname;
-use Cpanel::Validate::IP;
+use Cpanel::Validate::IP ();
 use Cpanel::Config::LoadUserOwners ();
 use NetAddr::IP;
 use Text::CSV;
@@ -96,7 +96,6 @@ our $isDevelLic   = 0;
 our $isOneTimeLic = 0;
 our $sendtomsg    = "";
 
-module_sanity_check();
 get_external_ip();
 
 GetOptions(
@@ -113,6 +112,7 @@ our $envtype;
 
 print "<c>\n";
 print MAGENTA "cPanel License Troubleshooter - Version: $version\n";
+module_sanity_check();
 if ($verifypage) {
     getVerifyJSON();
     print "</c>\n";
@@ -250,7 +250,7 @@ sub module_sanity_check {
         if ($@) {
             print_warn( "\t \\_ " . $reqmod . " No - Installing!" )
               unless ( !$verbose );
-            my $modinstall = qx[ /usr/local/cpanel/bin/cpanm $reqmod 2> /dev/null ];
+            my $modinstall = qx[ /usr/local/cpanel/3rdparty/perl/528/bin/cpanm $reqmod 2> /dev/null ];
         }
         else {
             print_OK( "\t \\_ " . $reqmod . " OK!\n" ) unless ( !$verbose );
@@ -759,7 +759,8 @@ sub get_network_hostname {
 sub get_ip_of_hostname {
     my $HOSTNAME_IP = qx[ dig +tries=2 +time=5 \@208.67.222.222 $HOSTNAME +short | head -1 2>/dev/null ];
     chomp($HOSTNAME_IP);
-    my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($HOSTNAME_IP);
+    #my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($HOSTNAME_IP);
+    my $IPValid = Cpanel::Validate::IP::is_valid_ip($HOSTNAME_IP);
     if ( !$IPValid ) {
         push( @WARNINGS, "Could not reverse $HOSTNAME to a valid IP address." );
     }
@@ -800,7 +801,8 @@ sub check_if_hostname_resolves_locally {
     chomp($LOCAL_HOSTNAME_IP);
     print_working("Checking if $HOSTNAME resolves locally")
       unless ( !$verbose );
-    my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($LOCAL_HOSTNAME_IP);
+    #my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($LOCAL_HOSTNAME_IP);
+    my $IPValid = Cpanel::Validate::IP::is_valid_ip($LOCAL_HOSTNAME_IP);
     if ( !$IPValid ) {
         push( @WARNINGS, "Could not resolve $HOSTNAME locally" );
         print RED "\t \\_ No\n" unless ( !$verbose );
