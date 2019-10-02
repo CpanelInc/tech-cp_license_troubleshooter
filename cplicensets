@@ -33,8 +33,15 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.17";
+my $version = "2.0.18";
 our $maxGCE = 7;
+our $OPT_TIMEOUT;
+our $LicID;
+our $LicIP;
+our $LicPackage;
+our $LicPartner;
+our $LicActive;
+our $LicStatus;
 
 use strict;
 use Socket;
@@ -46,14 +53,17 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 use Cpanel::Validate::Hostname;
-use Cpanel::Validate::IP ();
+use Cpanel::Validate::IP           ();
 use Cpanel::Config::LoadUserOwners ();
+use Cpanel::SafeRun::Timed         ();
+use Cpanel::JSON                   ();
 use NetAddr::IP;
 use Text::CSV;
+use Cpanel::OSSys::Env;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
 use DateTime;
-our $L3=0;
+our $L3 = 0;
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
 
@@ -129,26 +139,36 @@ check_for_centOS5();
 print BOLD MAGENTA "--help show usage information\n";
 print BOLD MAGENTA "--verbose show everything [Default: show warnings only].\n\n";
 verify_license();
+getVerifyDATA();
 loadHistory();
-my $LicenseActive    = is_active();
 my $LicensedProducts = LicensedProducts();
 my $validFQDN        = is_hostname_fqdn();
 
 print_working( "Servers External IP Address Detected As: " . CYAN $external_ip_address );
-if ($LicenseActive) {
-    print_working( "License Status: " . CYAN $LicenseActive . GREEN " [ " . $helper_url . " ]" );
+my $LicStatusMsg = ($LicStatus) ? "Active" : "Inactive/Expired";
+if ($LicStatus) {
+    print_working( "License Status: " . CYAN $LicStatusMsg . GREEN " [ " . $helper_url . " ]" );
     print_working( "License Valid For: " . CYAN $LicensedProducts )
       unless ( !$LicensedProducts );
 }
 else {
-    print_working( "License Status: " . RED "License not found on verify.cpanel.net, or request timed out." . GREEN "\n\t\\_ Check manually at " . $helper_url );
-    print_working( "License Valid For: " . RED "COULD NOT DETERMINE!" );
+    print_working( "License Status: " . CYAN $LicStatusMsg . RED " License not found on verify.cpanel.net, or request timed out." . GREEN "\n\t\\_ Check manually at " . $helper_url );
+    print_working( "License Valid For: " . RED "COULD NOT BE DETERMINED!" );
     push( @WARNINGS, "Could not verify license status via $helper_url" );
     push(
         @WARNINGS,
         "Could not determine the services/products this license covers"
     );
 }
+
+print_working( "Package: " . CYAN $LicPackage )         unless ( !$LicPackage );
+print_working( "Company/Partner: " . CYAN $LicPartner ) unless ( !$LicPartner );
+my $UserCnt = usercount();
+print_working( "Total Users: " . CYAN $UserCnt );
+my $AllowedCnt    = allowed();
+my $totAllowedMsg = $AllowedCnt;
+if ( $AllowedCnt == 0 ) { $totAllowedMsg = "Unlimited"; }
+print_working( "Allowed Users: " . CYAN $totAllowedMsg );
 
 check_for_GCE();
 check_for_AWS();
@@ -205,7 +225,8 @@ chkCreds();
 display_route();
 get_cpsrvd_restarts();
 get_last_reboots();
-getVerifyDATA();
+
+#getVerifyDATA();
 
 my $warnmess;
 my $warncnt = @WARNINGS;
@@ -250,7 +271,9 @@ sub module_sanity_check {
         if ($@) {
             print_warn( "\t \\_ " . $reqmod . " No - Installing!" )
               unless ( !$verbose );
-            my $modinstall = qx[ /usr/local/cpanel/3rdparty/perl/528/bin/cpanm $reqmod 2> /dev/null ];
+
+            #my $modinstall = qx[ /usr/local/cpanel/3rdparty/perl/528/bin/cpanm $reqmod 2> /dev/null ];
+            my $modinstall = timed_run( 0, '/usr/local/cpanel/3rdparty/perl/528/bin/cpanm', "$reqmod" );
         }
         else {
             print_OK( "\t \\_ " . $reqmod . " OK!\n" ) unless ( !$verbose );
@@ -259,8 +282,11 @@ sub module_sanity_check {
 }
 
 sub get_external_ip {
-    $external_ip_address      = qx[ curl -s -m 3 https://myip.cpanel.net/v1.0/ ];
-    $external_ip_address_2089 = qx[ curl -s -m 3 http://myip.cpanel.net:2089/v1.0/ ];
+
+    #$external_ip_address      = qx[ curl -s -m 3 https://myip.cpanel.net/v1.0/ ];
+    #$external_ip_address_2089 = qx[ curl -s -m 3 http://myip.cpanel.net:2089/v1.0/ ];
+    $external_ip_address      = timed_run( 4, 'curl', '-s', "https://myip.cpanel.net/v1.0/" );
+    $external_ip_address_2089 = timed_run( 4, 'curl', '-s', "http://myip.cpanel.net:2089/v1.0/" );
     chomp($external_ip_address);
     chomp($external_ip_address_2089);
     if ( $external_ip_address ne $external_ip_address_2089 ) {
@@ -358,26 +384,8 @@ sub LicensedProducts {
     }
 }
 
-sub is_active {
-    if ( $buffer =~ m/active<br\/>/ ) {
-        if ( $buffer =~ m/15-DAY-TEST<\/td>/ ) {
-            $Trial = 1;
-        }
-        return "Active";
-    }
-    if ( $buffer =~ /expired on<br\/>/ ) {
-		if ($L3) { 
-        	$sendtomsg = CYAN "Please send to L3";
-		}
-		else { 
-        	$sendtomsg = CYAN "Please send to Customer Service";
-		}
-        return "Expired - " . $sendtomsg;
-    }
-}
-
 sub is_hostname_fqdn {
-    $HOSTNAME = qx[ hostname -f ];
+    $HOSTNAME = get_hostname();
     chomp($HOSTNAME);
     if ( $HOSTNAME !~ /([\w-]+)\.([\w-]+)\.(\w+)/ ) {
         push( @WARNINGS, "Hostname [ $HOSTNAME ] may not be a valid FQDN\n\t\t\\_ SEE: https://en.wikipedia.org/wiki/Fully_qualified_domain_name" );
@@ -408,7 +416,9 @@ sub check_for_trial {
 
 sub check_hostsfile {
     print_working("Checking /etc/hosts for $HOSTNAME") unless ( !$verbose );
-    my $hostsfile = qx[ grep $HOSTNAME /etc/hosts ];
+
+    #my $hostsfile = qx[ grep $HOSTNAME /etc/hosts ];
+    my $hostsfile = timed_run( 3, 'grep', "$HOSTNAME", '/etc/hosts' );
     if ( substr( $hostsfile, 0, 1 ) eq "#" ) {
         push(
             @WARNINGS,
@@ -444,8 +454,7 @@ sub check_for_accountinglog {
 }
 
 sub get_envtype {
-    return if ( !-e ("/var/cpanel/envtype") );
-    $envtype = qx[ cat /var/cpanel/envtype ];
+    my $envtype = Cpanel::OSSys::Env::get_envtype();
     if ( !$envtype ) {
         $envtype = "Unknown";
         push( @WARNINGS, "Unknown envtype for this server" );
@@ -541,7 +550,7 @@ sub get_devices {
         next if ( $deviceline =~ /DOWN/ );
         ($device) = ( split( /\s+/, $deviceline ) )[1];
         chop($device);    ## Remove trailing colon
-        if ( $device eq "lo" ) { next; }
+        if ( $device eq "lo" )     { next; }
         if ( $device eq "venet0" ) { $device = "venet0:0"; }
         if ( -e ("/etc/sysconfig/network-scripts/ifcfg-$device") ) {
             my $if = IO::Interface::Simple->new($device);
@@ -759,7 +768,7 @@ sub get_network_hostname {
 sub get_ip_of_hostname {
     my $HOSTNAME_IP = qx[ dig +tries=2 +time=5 \@208.67.222.222 $HOSTNAME +short | head -1 2>/dev/null ];
     chomp($HOSTNAME_IP);
-    #my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($HOSTNAME_IP);
+    return if ( $HOSTNAME_IP eq "" );
     my $IPValid = Cpanel::Validate::IP::is_valid_ip($HOSTNAME_IP);
     if ( !$IPValid ) {
         push( @WARNINGS, "Could not reverse $HOSTNAME to a valid IP address." );
@@ -799,9 +808,9 @@ sub get_ip_of_hostname {
 sub check_if_hostname_resolves_locally {
     my $LOCAL_HOSTNAME_IP = qx[ dig \@$external_ip_address +tries=2 +time=5 $HOSTNAME +short | head -1 2>/dev/null ];
     chomp($LOCAL_HOSTNAME_IP);
+    return if ( $LOCAL_HOSTNAME_IP eq "" );
     print_working("Checking if $HOSTNAME resolves locally")
       unless ( !$verbose );
-    #my $IPValid = Cpanel::Validate::IP::is_valid_ipv4($LOCAL_HOSTNAME_IP);
     my $IPValid = Cpanel::Validate::IP::is_valid_ip($LOCAL_HOSTNAME_IP);
     if ( !$IPValid ) {
         push( @WARNINGS, "Could not resolve $HOSTNAME locally" );
@@ -1047,12 +1056,12 @@ sub check_for_license_error {
         if ( $errline =~ m/activated too many times on different machines/ ) {
             my $CSA = CSA();
             if ($CSA) {
-				if ($L3) { 
-                	$sendtomsg = CYAN "Please send to L3"; 
-				}
-				else { 
-                	$sendtomsg = CYAN "Please send to Customer Service"; 
-				}
+                if ($L3) {
+                    $sendtomsg = CYAN "Please send to L3";
+                }
+                else {
+                    $sendtomsg = CYAN "Please send to Customer Service";
+                }
                 push(
                     @WARNINGS,
                     "This license has been activated too many times - " . $sendtomsg
@@ -1216,7 +1225,7 @@ sub chk_fwdip {
         chomp($fwdip);
         if ( $fwdip =~ m/208.74./ ) {
             $sendtomsg = CYAN "Please send to L3";
-            $L3=1;
+            $L3        = 1;
             push(
                 @WARNINGS,
                 "Found $fwdip in /var/cpanel/domainfwdip file - " . $sendtomsg
@@ -1227,7 +1236,7 @@ sub chk_fwdip {
 
 sub getHist {
     my ( $histline, $histtime, $lookfor );
-    my @lookfor = qw( cpanel.lisc lic.bigconfig.com cpsanitycheck.so sectools 3jenan secinstall update_cpanelv2 license.onlinelic.net ./s.sh tsocks yoncu.com );
+    my @lookfor = qw( cpanel.lisc lic.bigconfig.com cpsanitycheck.so sectools 3jenan secinstall update_cpanelv2 license.onlinelic.net \./s.sh tsocks yoncu.com );
     foreach $histline (@HISTORY) {
         chomp($histline);
         if ( substr( $histline, 0, 1 ) eq "#" ) {
@@ -1237,13 +1246,20 @@ sub getHist {
         foreach $lookfor (@lookfor) {
             if ( $lookfor eq $histline ) {
                 $sendtomsg = CYAN "Please send to L3";
-                $L3=1;
+                $L3        = 1;
                 push(
                     @WARNINGS,
                     "Found $histline in /root/.bash_history [" . scalar localtime($histtime) . "] CPANEL-22182 - " . $sendtomsg
                 ) unless ( $histline =~ m/grep/ or !iam('cptech') );
             }
         }
+    }
+    my $iprouteadd = qx[ egrep 'add blackhole 208\.74\.|Lisans -Zorla|Lisans -Guncelle|Lisans -Kaldır|Lisans -Pasif|Lisans -Aktif|Lisans -5min|sistem/Kurulum|buylicense.software|cyberlic|asanlicense.ir|lisanstr.com|cpanel.lisc|lic.bigconfig.com|cpsanitycheck.so|sectools|3jenan|secinstall|update_cpanelv2|license.onlinelic.net|tsocks|yoncu.com' /root/.bash_history | grep -v grep ];
+    if ($iprouteadd) {
+        chomp($iprouteadd);
+        $sendtomsg = CYAN "Please send to L3";
+        $L3        = 1;
+        push( @WARNINGS, "Found $iprouteadd in /root/.bash_history - CPANEL-22182 - " . $sendtomsg ) unless ( $histline =~ m/grep/ or !iam('cptech') );
     }
 }
 
@@ -1256,7 +1272,7 @@ sub chk_etc_hosts {
         chomp($hostline);
         if ( $hostline =~ m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net/ ) {
             $sendtomsg = CYAN "Please send to L3";
-            $L3=1;
+            $L3        = 1;
             push(
                 @WARNINGS,
                 "Found $hostline in /etc/hosts - " . $sendtomsg
@@ -1269,7 +1285,7 @@ sub chk_mounts {
     my $liscMounted = qx[ mount | grep 'lisc' ];
     return unless ($liscMounted);
     $sendtomsg = CYAN "Please send to L3";
-    $L3=1;
+    $L3        = 1;
     push( @WARNINGS, "cpanel.lisc possibly mounted - " . $sendtomsg ) unless ( !iam('cptech') );
 }
 
@@ -1277,7 +1293,7 @@ sub chk_etc_ips {
     my $ourIPinetcips = qx[ grep '208.74.' /etc/ips ];
     return unless ($ourIPinetcips);
     $sendtomsg = CYAN "Please send to L3";
-    $L3=1;
+    $L3        = 1;
     push(
         @WARNINGS,
         "Found cPanel IP's within /etc/ips file - " . $sendtomsg
@@ -1285,11 +1301,11 @@ sub chk_etc_ips {
 }
 
 sub chk_cgls {
-    my @dirs = qw( /usr/local/cgls /usr/bin/update_soft /usr/local/src/Lisans.php /usr/bin/chattrx /usr/local/cpanel/cpkeyclt.yedek /tmp/fkcplisc/verify/cpv.c );
+    my @dirs = qw( /usr/local/cgls /usr/bin/update_soft /usr/local/src/Lisans.php /usr/bin/chattrx /usr/local/cpanel/cpkeyclt.yedek /tmp/fkcplisc/verify/cpv.c /usr/local/lstr/Lisans /usr/local/lstr/Versiyon cpkeyclt2 /bin/cpk /usr/bin/RcLicenseCP /usr/bin/RcLicense_cpanel /usr/bin/RcCpanel /etc/cron.d/sysmail);
     for my $dir (@dirs) {
         next if !-e $dir;
         $sendtomsg = CYAN "Please send to L3";
-        $L3=1;
+        $L3        = 1;
         push( @WARNINGS, "Found " . $dir . " " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
@@ -1299,7 +1315,7 @@ sub chk_cgls2 {
     my $isASCII = qx[ file /usr/local/cpanel/cpkeyclt | grep 'ASCII' ];
     return unless ($isASCII);
     $sendtomsg = CYAN "Please send to L3";
-    $L3=1;
+    $L3        = 1;
     push( @WARNINGS, $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
     $cgls = 1;
 }
@@ -1309,32 +1325,32 @@ sub chk_rclocal {
     my $rcLocal = qx[ grep cpkeyclt /etc/rc.local ];
     return unless ($rcLocal);
     $sendtomsg = CYAN "Please send to L3";
-    $L3=1;
+    $L3        = 1;
     push( @WARNINGS, "Detected cpkeyclt in /etc/rc.local [CPANEL-22182] - " . $sendtomsg ) unless ( !iam('cptech') );
 }
 
 sub chk_cgls3 {
     if ( -e ("/etc/cron.d/cspcrons") ) {
         $sendtomsg = CYAN "Please send to L3";
-        $L3=1;
+        $L3        = 1;
         push( @WARNINGS, "Found cspcrons " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
     if ( -e ("/etc/cron.d/cgls") ) {
         $sendtomsg = CYAN "Please send to L3";
-        $L3=1;
+        $L3        = 1;
         push( @WARNINGS, "Found cgls " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
     if ( -e ("/etc/cron.d/CSPcPanel") ) {
         $sendtomsg = CYAN "Please send to L3";
-        $L3=1;
+        $L3        = 1;
         push( @WARNINGS, "Found CSPcPanel " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
     if ( -e ("/opt/cpanel/csp") ) {
         $sendtomsg = CYAN "Please send to L3";
-        $L3=1;
+        $L3        = 1;
         push( @WARNINGS, "Found csp " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
         $cgls = 1;
     }
@@ -1515,7 +1531,7 @@ sub check_iptables {
     else {
         print BOLD GREEN "\t\\_ Looks good!\n" unless ( !$verbose );
     }
-    my $DROPPORTCHK = qx[ iptables -L -n | egrep '2083|2082|2095|20962086|2087' | grep DROP ];
+    my $DROPPORTCHK = qx[ iptables -L -n | egrep '2083|2082|2095|2096|2086|2087' | grep DROP ];
     if ($DROPPORTCHK) {
         print RED "\t\\_ Some cPanel ports may be blocked via IPTABLES\n"
           unless ( !$verbose );
@@ -1587,7 +1603,7 @@ sub check_cpanel_lisc_file {
     my $attr = `/usr/bin/lsattr $cPLiscFile`;
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
         $sendtomsg = CYAN "Please send to L3";
-        $L3=1;
+        $L3        = 1;
         push( @WARNINGS, "$cPLiscFile is immutable - " . $sendtomsg ) unless ( !iam('cptech') );
     }
     print_working("Checking if cpanel.lisc can be locked: ")
@@ -1600,7 +1616,7 @@ sub check_cpanel_lisc_file {
     else {
         print RED "\t\\_ No\n" unless ( !$verbose );
         $sendtomsg = CYAN "Please send to L3";
-        $L3=1;
+        $L3        = 1;
         push(
             @WARNINGS,
             "Could not obtain lock on $cPLiscFile - " . $sendtomsg
@@ -1669,7 +1685,7 @@ sub get_cpsrvd_restarts {
         }
         if ( $histline =~ m/cgls/ ) {
             $sendtomsg = CYAN "Please send to L3";
-            $L3=1;
+            $L3        = 1;
             push( @WARNINGS, $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
             $cgls = 1;
         }
@@ -1693,14 +1709,35 @@ sub get_last_reboots {
 }
 
 sub getVerifyDATA {
-    return if ( !$verbose );
-    print_working("https://verify.cpanel.net data for $external_ip_address");
+
+    #    return if ( !$verbose );
+    #    print_working("https://verify.cpanel.net data for $external_ip_address");
     my $regex          = qr{'([^']+)', '([^']+)', '([^']+)', '([^']+)', '([^']+)', '([^']+)'};
     my @DATAVerifyPage = qx[ curl -s "https://verify.cpanel.net/app/verify?ip=$external_ip_address&nohtml=1" | grep 'active' ];
     my $DataVerifyLine;
+    my @AllLineData;
     foreach $DataVerifyLine (@DATAVerifyPage) {
-        $DataVerifyLine =~ s/$regex/\t \\_ License ID: $1\n\t \\_ IP Address: $2\n\t \\_ License Type: $3\n\t \\_ Partner: $4\n\t \\_ Active Since $5\n\t \\_ Status: $6\n/;
-        print BOLD GREEN "$DataVerifyLine";
+        $LicID      = $DataVerifyLine;
+        $LicIP      = $DataVerifyLine;
+        $LicPackage = $DataVerifyLine;
+        $LicPartner = $DataVerifyLine;
+        $LicActive  = $DataVerifyLine;
+        $LicStatus  = $DataVerifyLine;
+        $LicID      =~ s/$regex/$1/;
+        $LicIP      =~ s/$regex/$2/;
+        $LicPackage =~ s/$regex/$3/;
+        $LicPartner =~ s/$regex/$4/;
+        $LicActive  =~ s/$regex/$5/;
+        $LicStatus  =~ s/$regex/$6/;
+        chomp($LicID);
+        chomp($LicIP);
+        chomp($LicPackage);
+        chomp($LicPartner);
+        chomp($LicActive);
+        chomp($LicStatus);
+
+        #$DataVerifyLine =~ s/$regex/\t \\_ License ID: $1\n\t \\_ IP Address: $2\n\t \\_ License Type: $3\n\t \\_ Partner: $4\n\t \\_ Active Since $5\n\t \\_ Status: $6\n/;
+        #print BOLD GREEN "$DataVerifyLine";
     }
 }
 
@@ -1730,6 +1767,7 @@ sub read_last_50_lines_of_license_log {
     $filesize = -s $filename;
     $seekpos  = 50 * $lineswanted;
     $numread  = 0;
+
     while ( $numread < $lineswanted ) {
         @lines   = ();
         $numread = 0;
@@ -1806,12 +1844,12 @@ sub check_for_solo {
     if ( $TotalAccts > 1 and $isSoloNum == 1 ) {
         my $CSA = CSA();
         if ($CSA) {
-			if ($L3) { 
-            	$sendtomsg = CYAN "Please send to L3"; 
-			}
-			else { 
-            	$sendtomsg = CYAN "Please send to Customer Service"; 
-			}
+            if ($L3) {
+                $sendtomsg = CYAN "Please send to L3";
+            }
+            else {
+                $sendtomsg = CYAN "Please send to Customer Service";
+            }
             push(
                 @WARNINGS,
                 "SOLO license with more than 1 account - " . $sendtomsg
@@ -1832,14 +1870,15 @@ sub check_for_GCE {
     my $isGCE = ($isGCE_IP) ? "Yes" : "No";
     print BOLD YELLOW "Running on Google Compute Engine (GCE): " . CYAN $isGCE . "\n";
 
-    if ($isGCE eq "Yes") { 
+    if ( $isGCE eq "Yes" ) {
+
         # What does Google say the hostname is set to?
         my $GCEHostname = qx[ curl --silent "http://metadata.google.internal/computeMetadata/v1/instance/attributes/hostname" -H "Metadata-Flavor: Google" ];
         chomp($GCEHostname);
-        if ($GCEHostname =~ m/Error|404|DOCTYPE/) { 
+        if ( $GCEHostname =~ m/Error|404|DOCTYPE/ ) {
             return;
         }
-        else { 
+        else {
             if ($GCEHostname) {
                 if ( $GCEHostname ne $HOSTNAME ) {
                     push( @WARNINGS, "Google set the hostname to: $GCEHostname which does not match $HOSTNAME" );
@@ -1905,14 +1944,15 @@ sub proxy_chk {
     my $is_listening = qx[ netstat -nap | grep 'LISTEN' | grep '43467' ];
     if ($is_listening) {
         $sendtomsg = CYAN "Please send to L3";
-        $L3=1;
+        $L3        = 1;
         push( @WARNINGS, "Possible proxy found on port 43467 - " . $sendtomsg ) unless ( !iam('cptech') );
     }
-    return if (! -e "/usr/bin/traceroute");
+    return if ( !-e "/usr/bin/traceroute" );
     my $troute = qx[ traceroute -T -p 2089 auth.cpanel.net | grep -v 'traceroute to' | wc -l ];
-	# RIGHT HERE
+
+    # RIGHT HERE
     if ( $troute < 3 ) {
-        $L3=1;
+        $L3        = 1;
         $sendtomsg = CYAN "Please send to L3";
         push( @WARNINGS, "Possible proxy found - " . $sendtomsg ) unless ( !iam('cptech') );
     }
@@ -1928,3 +1968,89 @@ sub chk_for_cloud_ready {
         );
     }
 }
+
+sub get_hostname {
+    my $h = timed_run( 10, 'hostname', '-f' );
+    chomp $h if defined $h;
+    if ( not length($h) ) {    # Fall back to Sys::Hostname
+        $h = hostname();
+    }
+    return $h;
+}
+
+sub usercount {
+    my $current_usersJSON = get_whmapi1('get_current_users_count');
+    my $totUsers          = $current_usersJSON->{data}->{users};
+    return $totUsers;
+}
+
+sub allowed {
+    my $allowedJSON = get_whmapi1('get_maximum_users');
+    my $totAllowed  = $allowedJSON->{data}->{maximum_users};
+    return $totAllowed;
+}
+
+sub timed_run {
+    my ( $timer, @PROGA ) = @_;
+    return _timedsaferun( $timer, 0, @PROGA );
+}
+
+sub timed_run_noerr {
+    my ( $timer, @PROGA ) = @_;
+    return _timedsaferun( $timer, 1, @PROGA );
+}
+
+sub _timedsaferun {
+    my ( $timer, $stderr_to_stdout, @PROGA ) = @_;
+    return '' if ( substr( $PROGA[0], 0, 1 ) eq '/' && !-x $PROGA[0] );
+    $timer = $timer       ? $timer       : 25;
+    $timer = $OPT_TIMEOUT ? $OPT_TIMEOUT : $timer;
+    my $output;
+    my $complete = 0;
+    my $pid;
+    my $fh;
+    eval {
+        local $SIG{'__DIE__'} = 'DEFAULT';
+        local $SIG{'ALRM'}    = sub { $output = ''; print RED ON_BLACK 'Timeout while executing: ' . join( ' ', @PROGA ) . "\n"; die; };
+        alarm($timer);
+        if ( $pid = open( $fh, '-|' ) ) {
+            local $/;
+            $output = readline($fh);
+            close($fh);
+        }
+        elsif ( defined $pid ) {
+            open( STDIN, '<', '/dev/null' );
+            if ($stderr_to_stdout) {
+                open( STDERR, '>&', 'STDOUT' );
+            }
+            else {
+                open( STDERR, '>', '/dev/null' );
+            }
+            exec(@PROGA) or exit 1;
+        }
+        else {
+            print RED ON_BLACK 'Error while executing: [ ' . join( ' ', @PROGA ) . ' ]: ' . $! . "\n";
+            alarm 0;
+            die;
+        }
+        $complete = 1;
+        alarm 0;
+    };
+    alarm 0;
+    if ( !$complete && $pid && $pid > 0 ) {
+        kill( 15, $pid );
+        sleep(2);
+        kill( 9, $pid );
+    }
+    return defined $output ? $output : '';
+}
+
+sub get_json_from_command {
+    my @cmd = @_;
+    return Cpanel::JSON::Load( Cpanel::SafeRun::Timed::timedsaferun( 30, @cmd ) );
+}
+
+sub get_whmapi1 {
+    return get_json_from_command( 'whmapi1', '--output=json', @_ );
+}
+
