@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.18";
+my $version = "2.0.19";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $LicID;
@@ -55,6 +55,7 @@ use Cpanel::Config::LoadWwwAcctConf ();
 use Cpanel::Validate::Hostname;
 use Cpanel::Validate::IP           ();
 use Cpanel::Config::LoadUserOwners ();
+use Cpanel::Config::LoadUserDomains ();
 use Cpanel::SafeRun::Timed         ();
 use Cpanel::JSON                   ();
 use NetAddr::IP;
@@ -164,6 +165,11 @@ else {
 print_working( "Package: " . CYAN $LicPackage )         unless ( !$LicPackage );
 print_working( "Company/Partner: " . CYAN $LicPartner ) unless ( !$LicPartner );
 my $UserCnt = usercount();
+# If $UserCnt = 1 - Customer qualifies for SOLO
+# If $UserCnt is 5 or less - Customer qualifes for Admin
+# If $UserCnt is 30 or less - Customer qualifies for Pro
+# If $UserCnt is 50 or less - Customer qualifies for Plus (available to partners only)
+# If $UserCnt is 100 or less - Customer qualifies for Premier
 print_working( "Total Users: " . CYAN $UserCnt );
 my $AllowedCnt    = allowed();
 my $totAllowedMsg = $AllowedCnt;
@@ -1210,7 +1216,7 @@ sub shenanigans {
     chk_etc_ips();
     chk_cgls();
     chk_cgls2();
-    chk_cgls3();
+    chk_cgls4();
     chk_rclocal();
     proxy_chk();
 }
@@ -1329,31 +1335,23 @@ sub chk_rclocal {
     push( @WARNINGS, "Detected cpkeyclt in /etc/rc.local [CPANEL-22182] - " . $sendtomsg ) unless ( !iam('cptech') );
 }
 
-sub chk_cgls3 {
-    if ( -e ("/etc/cron.d/cspcrons") ) {
-        $sendtomsg = CYAN "Please send to L3";
-        $L3        = 1;
-        push( @WARNINGS, "Found cspcrons " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
-        $cgls = 1;
-    }
-    if ( -e ("/etc/cron.d/cgls") ) {
-        $sendtomsg = CYAN "Please send to L3";
-        $L3        = 1;
-        push( @WARNINGS, "Found cgls " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
-        $cgls = 1;
-    }
-    if ( -e ("/etc/cron.d/CSPcPanel") ) {
-        $sendtomsg = CYAN "Please send to L3";
-        $L3        = 1;
-        push( @WARNINGS, "Found CSPcPanel " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
-        $cgls = 1;
-    }
-    if ( -e ("/opt/cpanel/csp") ) {
-        $sendtomsg = CYAN "Please send to L3";
-        $L3        = 1;
-        push( @WARNINGS, "Found csp " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
-        $cgls = 1;
-    }
+sub chk_cgls4 {
+	my @dirs  = qw( /etc/cron.d /opt/cpanel /usr/local/cpanel/obj /usr/bin /root/pc4 /root /usr/local /usr/local/cpanel );
+	my @files = qw( cspcrons cgls CSPcPanel csp ilcp cpanelmodule.php chattr2 libproxychains4.so proxychains4 license.log intlic cpsys2.conf proxy.log cpane1.lisc );
+	my $fullpath;
+	for my $dir (@dirs) {
+		next if !-e $dir;
+		for my $file (@files) {
+			$fullpath = $dir . "/" . $file;
+			stat $fullpath;
+			if ( -f _ and not -z _ ) {
+        		$sendtomsg = CYAN "Please send to L3";
+        		$L3        = 1;
+        		push( @WARNINGS, "Found " . $fullpath . " suspicious software " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
+        		$cgls = 1;
+			}
+		}
+	}
 }
 
 sub check_crons {
@@ -1947,10 +1945,16 @@ sub proxy_chk {
         $L3        = 1;
         push( @WARNINGS, "Possible proxy found on port 43467 - " . $sendtomsg ) unless ( !iam('cptech') );
     }
+	if ( -d "/root/pc4" ) { 
+		if ( -e "/root/pc4/libproxychains4.so" or -e "/root/pc4/proxychains4" or -e "/root/pc4/cpsys2.conf") { 
+        	$sendtomsg = CYAN "Please send to L3";
+        	$L3        = 1;
+        	push( @WARNINGS, "Possible proxy found /root/pc4 directory exists - " . $sendtomsg ) unless ( !iam('cptech') );
+		}
+	}
     return if ( !-e "/usr/bin/traceroute" );
     my $troute = qx[ traceroute -T -p 2089 auth.cpanel.net | grep -v 'traceroute to' | wc -l ];
 
-    # RIGHT HERE
     if ( $troute < 3 ) {
         $L3        = 1;
         $sendtomsg = CYAN "Please send to L3";
@@ -1979,8 +1983,9 @@ sub get_hostname {
 }
 
 sub usercount {
-    my $current_usersJSON = get_whmapi1('get_current_users_count');
-    my $totUsers          = $current_usersJSON->{data}->{users};
+	my $totUsers = Cpanel::Config::LoadUserDomains::counttrueuserdomains();
+#    my $current_usersJSON = get_whmapi1('get_current_users_count');
+#    my $totUsers          = $current_usersJSON->{data}->{users};
     return $totUsers;
 }
 
