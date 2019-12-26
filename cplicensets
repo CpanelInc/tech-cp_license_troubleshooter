@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.21";
+my $version = "2.0.22";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $LicID;
@@ -53,11 +53,11 @@ use Getopt::Long;
 use Term::ANSIColor qw(:constants);
 use Cpanel::Config::LoadWwwAcctConf ();
 use Cpanel::Validate::Hostname;
-use Cpanel::Validate::IP           ();
-use Cpanel::Config::LoadUserOwners ();
+use Cpanel::Validate::IP            ();
+use Cpanel::Config::LoadUserOwners  ();
 use Cpanel::Config::LoadUserDomains ();
-use Cpanel::SafeRun::Timed         ();
-use Cpanel::JSON                   ();
+use Cpanel::SafeRun::Timed          ();
+use Cpanel::JSON                    ();
 use NetAddr::IP;
 use Text::CSV;
 use Cpanel::OSSys::Env;
@@ -166,18 +166,22 @@ else {
 print_working( "Package: " . CYAN $LicPackage )         unless ( !$LicPackage );
 print_working( "Company/Partner: " . CYAN $LicPartner ) unless ( !$LicPartner );
 my $UserCnt = usercount();
+
 # If $UserCnt = 1 - Customer qualifies for SOLO
 # If $UserCnt is 5 or less - Customer qualifes for Admin
 # If $UserCnt is 30 or less - Customer qualifies for Pro
 # If $UserCnt is 50 or less - Customer qualifies for Plus (available to partners only)
 # If $UserCnt is 100 or less - Customer qualifies for Premier
 print_working( "Total Users: " . CYAN $UserCnt );
-my $AllowedCnt    = allowed();
-my $totAllowedMsg = $AllowedCnt;
-if ( $AllowedCnt == 0 ) { $totAllowedMsg = "Unlimited"; }
-print_working( "Allowed Users: " . CYAN $totAllowedMsg );
-my $ActiveProfileNode = getProfileNode();
-print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
+if ( -e "/usr/local/cpanel/cpanel.lisc" ) {
+    my $AllowedCnt    = allowed();
+    my $totAllowedMsg = $AllowedCnt;
+    if ( $AllowedCnt eq "" ) { $totAllowedMsg = "Unknown"; }
+    if ( $AllowedCnt == 0 )  { $totAllowedMsg = "Unlimited"; }
+    print_working( "Allowed Users: " . CYAN $totAllowedMsg );
+    my $ActiveProfileNode = getProfileNode();
+    print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
+}
 
 check_for_GCE();
 check_for_AWS();
@@ -502,7 +506,7 @@ sub get_ipinfo {
     my @IPINFO = qx[ curl -s ip-api.com/$ipinfoIP ];
     foreach $ipinfoline (@IPINFO) {
         chomp($ipinfoline);
-        next if ($ipinfoline =~ m/status|continentCode|countryCode|region|district|currency|mobile|proxy|query|asname/);
+        next if ( $ipinfoline =~ m/status|continentCode|countryCode|region|district|currency|mobile|proxy|query|asname/ );
         if ( $ipinfoline =~ m/{|}/ ) {
             next;
         }
@@ -567,10 +571,10 @@ sub get_devices {
         next if ( $deviceline =~ /DOWN/ );
         ($device) = ( split( /\s+/, $deviceline ) )[1];
         chop($device);    ## Remove trailing colon
-        if ( $device eq "lo" )     { next; }
+        if ( $device eq "lo" ) { next; }
         if ( $device eq "venet0" ) { $device = "venet0:0"; }
-        if ( $device =~ m/\@/ ) { 
-            ( $device ) = ( split(/\@/,$device))[0];
+        if ( $device =~ m/\@/ ) {
+            ($device) = ( split( /\@/, $device ) )[0];
         }
         if ( -e ("/etc/sysconfig/network-scripts/ifcfg-$device") ) {
             my $if = IO::Interface::Simple->new($device);
@@ -626,6 +630,7 @@ sub arping_check {
     my $ARPINGCMD = "";
     $ARPINGCMD = qx[ arping -D -I $nicdevice -c 2 $nicIPAddr | grep 'Received 0' ];
     chomp($ARPINGCMD);
+
     if ( $ARPINGCMD =~ m/Received 0/ ) {
         print_working( "Checking $nicdevice for multiple devices responding to $nicIPAddr: " . GREEN . "None" )
           unless ( !$verbose );
@@ -1257,8 +1262,11 @@ sub chk_fwdip {
 
 sub getHist {
     my $lookfor;
-    my @lookfor = ( 'lic.bigconfig.com','cpsanitycheck.so','sectools','3jenan','secinstall','update_cpanelv2','license.onlinelic.net','\./s.sh','tsocks','yoncu.com','cpanel.resellercenter.ir','add blackhole 208\.74\.','Lisans -Zorla','Lisans -Guncelle','Lisans -Kaldır','Lisans -Pasif','Lisans -Aktif','Lisans -5min','sistem/Kurulum','buylicense.software','cyberlic','asanlicense.ir','lisanstr.com' );
-    foreach $lookfor(@lookfor) {
+    my @lookfor = (
+        'lic.bigconfig.com', 'cpsanitycheck.so', 'sectools', '3jenan', 'secinstall', 'update_cpanelv2', 'license.onlinelic.net', '\./s.sh', 'tsocks', 'yoncu.com', 'cpanel.resellercenter.ir', 'add blackhole 208\.74\.', 'Lisans -Zorla', 'Lisans -Guncelle', 'Lisans -Kaldır', 'Lisans -Pasif', 'Lisans -Aktif', 'Lisans -5min', 'sistem/Kurulum', 'buylicense.software', 'cyberlic', 'asanlicense.ir',
+        'lisanstr.com'
+    );
+    foreach $lookfor (@lookfor) {
         chomp($lookfor);
         my $match = first { /$lookfor/ } @HISTORY;
         chomp($match);
@@ -1298,7 +1306,7 @@ sub chk_mounts {
 
 sub chk_etc_ips {
     my $mainIPInIPS = qx[ grep '$external_ip_address' /etc/ips ];
-    if ($mainIPInIPS) { 
+    if ($mainIPInIPS) {
         push( @WARNINGS, "$external_ip_address found in /etc/ips file. You should not add the licensed IP as an alias!" );
     }
     my $ourIPinetcips = qx[ grep '208.74.' /etc/ips ];
@@ -1312,7 +1320,8 @@ sub chk_etc_ips {
 }
 
 sub chk_cgls {
-    my @dirs = qw( /usr/local/cgls /usr/bin/update_soft /usr/local/src/Lisans.php /usr/bin/chattrx /usr/local/cpanel/cpkeyclt.yedek /tmp/fkcplisc/verify/cpv.c /usr/local/lstr/Lisans /usr/local/lstr/Versiyon cpkeyclt2 /bin/cpk /usr/bin/RcLicenseCP /usr/bin/RcLicense_cpanel /usr/bin/RcCpanel /etc/cron.d/sysmail/etc/cron.d/ills /var/www/vhosts/default/htdocs/lic_check.php /var/www/html/lic_check.php /usr/local/cpanel/obj/litespeedmodule.php /usr/local/.vmfi0 /usr/bin/.RcLicense_cpanel /usr/local/.recoverit /usr/bin/.rockst /usr/bin/rccpcronbackup /etc/cron.d/sysmail /root/.cp.pid /root/.cp.result /root/.cp.pid1 /root/.rcproc /root/.rccp.pid1 /root/.back0 /root/.bash_time /root/.rccp.pid /root/.rccp.result /usr/local/cpanel/cpanel1 /usr/local/cpanel/.cpanel2 /usr/local/cpanel/.cpsrvd /usr/local/sectools );
+    my @dirs =
+      qw( /usr/local/cgls /usr/bin/update_soft /usr/local/src/Lisans.php /usr/bin/chattrx /usr/local/cpanel/cpkeyclt.yedek /tmp/fkcplisc/verify/cpv.c /usr/local/lstr/Lisans /usr/local/lstr/Versiyon cpkeyclt2 /bin/cpk /usr/bin/RcLicenseCP /usr/bin/RcLicense_cpanel /usr/bin/RcCpanel /etc/cron.d/sysmail/etc/cron.d/ills /var/www/vhosts/default/htdocs/lic_check.php /var/www/html/lic_check.php /usr/local/cpanel/obj/litespeedmodule.php /usr/local/.vmfi0 /usr/bin/.RcLicense_cpanel /usr/local/.recoverit /usr/bin/.rockst /usr/bin/rccpcronbackup /etc/cron.d/sysmail /root/.cp.pid /root/.cp.result /root/.cp.pid1 /root/.rcproc /root/.rccp.pid1 /root/.back0 /root/.bash_time /root/.rccp.pid /root/.rccp.result /usr/local/cpanel/cpanel1 /usr/local/cpanel/.cpanel2 /usr/local/cpanel/.cpsrvd /usr/local/sectools );
     for my $dir (@dirs) {
         next if !-e $dir;
         $sendtomsg = CYAN "Please send to L3";
@@ -1341,22 +1350,22 @@ sub chk_rclocal {
 }
 
 sub chk_cgls4 {
-	my @dirs  = qw( /etc/cron.d /opt/cpanel /usr/local/cpanel/obj /usr/bin /root/pc4 /root /usr/local /usr/local/cpanel );
-	my @files = qw( cspcrons cgls CSPcPanel csp ilcp cpanelmodule.php chattr2 libproxychains4.so proxychains4 license.log intlic cpsys2.conf proxy.log cpane1.lisc );
-	my $fullpath;
-	for my $dir (@dirs) {
-		next if !-e $dir;
-		for my $file (@files) {
-			$fullpath = $dir . "/" . $file;
-			stat $fullpath;
-			if ( -f _ and not -z _ ) {
-        		$sendtomsg = CYAN "Please send to L3";
-        		$L3        = 1;
-        		push( @WARNINGS, "Found " . $fullpath . " suspicious software " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
-        		$cgls = 1;
-			}
-		}
-	}
+    my @dirs  = qw( /etc/cron.d /opt/cpanel /usr/local/cpanel/obj /usr/bin /root/pc4 /root /usr/local /usr/local/cpanel );
+    my @files = qw( cspcrons cgls CSPcPanel csp ilcp cpanelmodule.php chattr2 libproxychains4.so proxychains4 license.log intlic cpsys2.conf proxy.log cpane1.lisc );
+    my $fullpath;
+    for my $dir (@dirs) {
+        next if !-e $dir;
+        for my $file (@files) {
+            $fullpath = $dir . "/" . $file;
+            stat $fullpath;
+            if ( -f _ and not -z _ ) {
+                $sendtomsg = CYAN "Please send to L3";
+                $L3        = 1;
+                push( @WARNINGS, "Found " . $fullpath . " suspicious software " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
+                $cgls = 1;
+            }
+        }
+    }
 }
 
 sub check_crons {
@@ -1724,12 +1733,12 @@ sub getVerifyDATA {
         $LicPartner = $DataVerifyLine;
         $LicActive  = $DataVerifyLine;
         $LicStatus  = $DataVerifyLine;
-        $LicID      =~ s/$regex/$1/;
-        $LicIP      =~ s/$regex/$2/;
+        $LicID =~ s/$regex/$1/;
+        $LicIP =~ s/$regex/$2/;
         $LicPackage =~ s/$regex/$3/;
         $LicPartner =~ s/$regex/$4/;
-        $LicActive  =~ s/$regex/$5/;
-        $LicStatus  =~ s/$regex/$6/;
+        $LicActive =~ s/$regex/$5/;
+        $LicStatus =~ s/$regex/$6/;
         chomp($LicID);
         chomp($LicIP);
         chomp($LicPackage);
@@ -1942,7 +1951,7 @@ sub proxy_chk {
     my @ports2chk = qw( 43467 13555 );
     my $port;
     my $is_listening;
-    foreach $port(@ports2chk) { 
+    foreach $port (@ports2chk) {
         $is_listening = qx[ lsof -itcp:$port ];
         if ($is_listening) {
             $sendtomsg = CYAN "Please send to L3";
@@ -1950,13 +1959,13 @@ sub proxy_chk {
             push( @WARNINGS, "Possible proxy found listening on port: $port - " . $sendtomsg ) unless ( !iam('cptech') );
         }
     }
-	if ( -d "/root/pc4" ) { 
-		if ( -e "/root/pc4/libproxychains4.so" or -e "/root/pc4/proxychains4" or -e "/root/pc4/cpsys2.conf" or -e "/root/pc4/proxychains-ng-master" ) { 
-        	$sendtomsg = CYAN "Please send to L3";
-        	$L3        = 1;
-        	push( @WARNINGS, "Possible proxy found /root/pc4 directory exists - " . $sendtomsg ) unless ( !iam('cptech') );
-		}
-	}
+    if ( -d "/root/pc4" ) {
+        if ( -e "/root/pc4/libproxychains4.so" or -e "/root/pc4/proxychains4" or -e "/root/pc4/cpsys2.conf" or -e "/root/pc4/proxychains-ng-master" ) {
+            $sendtomsg = CYAN "Please send to L3";
+            $L3        = 1;
+            push( @WARNINGS, "Possible proxy found /root/pc4 directory exists - " . $sendtomsg ) unless ( !iam('cptech') );
+        }
+    }
     return if ( !-e "/usr/bin/traceroute" );
     my $troute = qx[ traceroute -T -p 2089 auth.cpanel.net | grep -v 'traceroute to' | wc -l ];
 
@@ -1988,8 +1997,7 @@ sub get_hostname {
 }
 
 sub usercount {
-    my $totUsersJSON = get_whmapi1('get_current_users_count');
-    my $totUsers = $totUsersJSON->{data}->{users};
+    my $totUsers = Cpanel::Config::LoadUserDomains::counttrueuserdomains();
     return $totUsers;
 }
 
@@ -2001,7 +2009,7 @@ sub allowed {
 
 sub getProfileNode {
     my $ProfileNodeJSON = get_whmapi1('get_current_profile');
-    my $ProfileNode = $ProfileNodeJSON->{data}->{name};
+    my $ProfileNode     = $ProfileNodeJSON->{data}->{name};
     return $ProfileNode;
 }
 
@@ -2026,7 +2034,7 @@ sub _timedsaferun {
     my $fh;
     eval {
         local $SIG{'__DIE__'} = 'DEFAULT';
-        local $SIG{'ALRM'}    = sub { $output = ''; print RED ON_BLACK 'Timeout while executing: ' . join( ' ', @PROGA ) . "\n"; die; };
+        local $SIG{'ALRM'} = sub { $output = ''; print RED ON_BLACK 'Timeout while executing: ' . join( ' ', @PROGA ) . "\n"; die; };
         alarm($timer);
         if ( $pid = open( $fh, '-|' ) ) {
             local $/;
