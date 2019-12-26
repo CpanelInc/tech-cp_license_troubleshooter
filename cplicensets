@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.19";
+my $version = "2.0.21";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $LicID;
@@ -64,6 +64,7 @@ use Cpanel::OSSys::Env;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
 use DateTime;
+use List::Util 'first';
 our $L3 = 0;
 $Term::ANSIColor::AUTORESET = 1;
 $|                          = 1;
@@ -121,17 +122,17 @@ our $cPLiscFile = '/usr/local/cpanel/cpanel.lisc';
 our $DEVinConf;
 our $envtype;
 
-print "<c>\n";
+print "\n```\n";
 print MAGENTA "cPanel License Troubleshooter - Version: $version\n";
 module_sanity_check();
 if ($verifypage) {
     getVerifyJSON();
-    print "</c>\n";
+    print "```\n";
     exit;
 }
 if ($withlogs) {
     read_last_50_lines_of_license_log();
-    print "</c>\n";
+    print "```\n";
     exit;
 }
 Usage() if ($help);
@@ -175,6 +176,8 @@ my $AllowedCnt    = allowed();
 my $totAllowedMsg = $AllowedCnt;
 if ( $AllowedCnt == 0 ) { $totAllowedMsg = "Unlimited"; }
 print_working( "Allowed Users: " . CYAN $totAllowedMsg );
+my $ActiveProfileNode = getProfileNode();
+print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
 
 check_for_GCE();
 check_for_AWS();
@@ -244,7 +247,7 @@ if ( $warncnt > 0 ) {
         print RED "\t\\_ $warnmess\n";
     }
 }
-print "</c>\n";
+print "```\n";
 exit;
 
 sub check_for_centOS5 {
@@ -262,7 +265,7 @@ sub check_for_centOS5 {
     return if !$rpm_dist_ver;
     return if ( $rpm_dist_ver > 5 );
     print_warn("Sorry, this cannot run on your version of OS!");
-    print "</c>\n";
+    print "```\n";
     exit;
 }
 
@@ -288,9 +291,6 @@ sub module_sanity_check {
 }
 
 sub get_external_ip {
-
-    #$external_ip_address      = qx[ curl -s -m 3 https://myip.cpanel.net/v1.0/ ];
-    #$external_ip_address_2089 = qx[ curl -s -m 3 http://myip.cpanel.net:2089/v1.0/ ];
     $external_ip_address      = timed_run( 4, 'curl', '-s', "https://myip.cpanel.net/v1.0/" );
     $external_ip_address_2089 = timed_run( 4, 'curl', '-s', "http://myip.cpanel.net:2089/v1.0/" );
     chomp($external_ip_address);
@@ -499,14 +499,25 @@ sub get_ipinfo {
     my $ipinfoIP = $_[0];
     my $ipinfoline;
     print_working("Getting ipinfo for $ipinfoIP");
-    my @IPINFO = qx[ curl -s ipinfo.io/$ipinfoIP ];
+    my @IPINFO = qx[ curl -s ip-api.com/$ipinfoIP ];
     foreach $ipinfoline (@IPINFO) {
         chomp($ipinfoline);
+        next if ($ipinfoline =~ m/status|continentCode|countryCode|region|district|currency|mobile|proxy|query|asname/);
         if ( $ipinfoline =~ m/{|}/ ) {
             next;
         }
         $ipinfoline =~ s/\"//g;
         $ipinfoline =~ s/,$//g;
+        $ipinfoline =~ s/as/AS-Name    /;
+        $ipinfoline =~ s/org/Organization/;
+        $ipinfoline =~ s/isp/ISP         /;
+        $ipinfoline =~ s/timezone/TimeZone         /;
+        $ipinfoline =~ s/lat/Latitude    /;
+        $ipinfoline =~ s/lon/Longitude   /;
+        $ipinfoline =~ s/zip/Postal      /;
+        $ipinfoline =~ s/city/City         /;
+        $ipinfoline =~ s/country/Country         /;
+        $ipinfoline =~ s/continent/Continent         /;
         print BOLD CYAN "\t\\_$ipinfoline\n";
     }
 }
@@ -558,6 +569,9 @@ sub get_devices {
         chop($device);    ## Remove trailing colon
         if ( $device eq "lo" )     { next; }
         if ( $device eq "venet0" ) { $device = "venet0:0"; }
+        if ( $device =~ m/\@/ ) { 
+            ( $device ) = ( split(/\@/,$device))[0];
+        }
         if ( -e ("/etc/sysconfig/network-scripts/ifcfg-$device") ) {
             my $if = IO::Interface::Simple->new($device);
             $nicIP = $if->address;
@@ -606,7 +620,8 @@ sub get_devices {
 sub arping_check {
     my $nicdevice = $_[0];
     my $nicIPAddr = $_[1];
-    return if ( $envtype =~ m/virtuozzo|vzcontainer/ );
+    return if ( $envtype =~ m/virtuozzo/ );
+    return if ( $envtype =~ m/vzcontainer/ );
     return if ( $nicIPAddr eq "" or $nicdevice eq "" );
     my $ARPINGCMD = "";
     $ARPINGCMD = qx[ arping -D -I $nicdevice -c 2 $nicIPAddr | grep 'Received 0' ];
@@ -712,7 +727,7 @@ sub run_check_valid_server_hostname {
     my ($FirstHost) = ( split( /\./, $HOSTNAME ) )[0];
     my $FirstHostWarn = "";
     if ( $FirstHost =~ m/^whm$|^cpanel$|^webmail$|^webdisk$|^mail$|^autodiscover$/ ) {
-        $FirstHostWarn = RED "$HOSTNAME should not begin with a service subdomain ($FirstHost)\n\t\t \\_ See: " . CYAN "https://documentation.cpanel.net/display/80Docs/Change+Hostname";
+        $FirstHostWarn = RED "$HOSTNAME should not begin with a service subdomain ($FirstHost)\n\t\t \\_ See: " . CYAN "https://documentation.cpanel.net/display/82Docs/Change+Hostname";
         push( @WARNINGS, $FirstHostWarn );
     }
 }
@@ -1241,31 +1256,17 @@ sub chk_fwdip {
 }
 
 sub getHist {
-    my ( $histline, $histtime, $lookfor );
-    my @lookfor = qw( cpanel.lisc lic.bigconfig.com cpsanitycheck.so sectools 3jenan secinstall update_cpanelv2 license.onlinelic.net \./s.sh tsocks yoncu.com );
-    foreach $histline (@HISTORY) {
-        chomp($histline);
-        if ( substr( $histline, 0, 1 ) eq "#" ) {
-            $histtime = substr( $histline, 1 );
-            next;
+    my $lookfor;
+    my @lookfor = ( 'lic.bigconfig.com','cpsanitycheck.so','sectools','3jenan','secinstall','update_cpanelv2','license.onlinelic.net','\./s.sh','tsocks','yoncu.com','cpanel.resellercenter.ir','add blackhole 208\.74\.','Lisans -Zorla','Lisans -Guncelle','Lisans -Kaldır','Lisans -Pasif','Lisans -Aktif','Lisans -5min','sistem/Kurulum','buylicense.software','cyberlic','asanlicense.ir','lisanstr.com' );
+    foreach $lookfor(@lookfor) {
+        chomp($lookfor);
+        my $match = first { /$lookfor/ } @HISTORY;
+        chomp($match);
+        if ($match) {
+            $sendtomsg = CYAN "Please send to L3";
+            $L3        = 1;
+            push( @WARNINGS, "Found $match in /root/.bash_history - CPANEL-22182 - " . $sendtomsg ) unless ( $match =~ m/grep/ or !iam('cptech') );
         }
-        foreach $lookfor (@lookfor) {
-            if ( $lookfor eq $histline ) {
-                $sendtomsg = CYAN "Please send to L3";
-                $L3        = 1;
-                push(
-                    @WARNINGS,
-                    "Found $histline in /root/.bash_history [" . scalar localtime($histtime) . "] CPANEL-22182 - " . $sendtomsg
-                ) unless ( $histline =~ m/grep/ or !iam('cptech') );
-            }
-        }
-    }
-    my $iprouteadd = qx[ egrep 'add blackhole 208\.74\.|Lisans -Zorla|Lisans -Guncelle|Lisans -Kaldır|Lisans -Pasif|Lisans -Aktif|Lisans -5min|sistem/Kurulum|buylicense.software|cyberlic|asanlicense.ir|lisanstr.com|cpanel.lisc|lic.bigconfig.com|cpsanitycheck.so|sectools|3jenan|secinstall|update_cpanelv2|license.onlinelic.net|tsocks|yoncu.com' /root/.bash_history | grep -v grep ];
-    if ($iprouteadd) {
-        chomp($iprouteadd);
-        $sendtomsg = CYAN "Please send to L3";
-        $L3        = 1;
-        push( @WARNINGS, "Found $iprouteadd in /root/.bash_history - CPANEL-22182 - " . $sendtomsg ) unless ( $histline =~ m/grep/ or !iam('cptech') );
     }
 }
 
@@ -1296,6 +1297,10 @@ sub chk_mounts {
 }
 
 sub chk_etc_ips {
+    my $mainIPInIPS = qx[ grep '$external_ip_address' /etc/ips ];
+    if ($mainIPInIPS) { 
+        push( @WARNINGS, "$external_ip_address found in /etc/ips file. You should not add the licensed IP as an alias!" );
+    }
     my $ourIPinetcips = qx[ grep '208.74.' /etc/ips ];
     return unless ($ourIPinetcips);
     $sendtomsg = CYAN "Please send to L3";
@@ -1307,7 +1312,7 @@ sub chk_etc_ips {
 }
 
 sub chk_cgls {
-    my @dirs = qw( /usr/local/cgls /usr/bin/update_soft /usr/local/src/Lisans.php /usr/bin/chattrx /usr/local/cpanel/cpkeyclt.yedek /tmp/fkcplisc/verify/cpv.c /usr/local/lstr/Lisans /usr/local/lstr/Versiyon cpkeyclt2 /bin/cpk /usr/bin/RcLicenseCP /usr/bin/RcLicense_cpanel /usr/bin/RcCpanel /etc/cron.d/sysmail);
+    my @dirs = qw( /usr/local/cgls /usr/bin/update_soft /usr/local/src/Lisans.php /usr/bin/chattrx /usr/local/cpanel/cpkeyclt.yedek /tmp/fkcplisc/verify/cpv.c /usr/local/lstr/Lisans /usr/local/lstr/Versiyon cpkeyclt2 /bin/cpk /usr/bin/RcLicenseCP /usr/bin/RcLicense_cpanel /usr/bin/RcCpanel /etc/cron.d/sysmail/etc/cron.d/ills /var/www/vhosts/default/htdocs/lic_check.php /var/www/html/lic_check.php /usr/local/cpanel/obj/litespeedmodule.php /usr/local/.vmfi0 /usr/bin/.RcLicense_cpanel /usr/local/.recoverit /usr/bin/.rockst /usr/bin/rccpcronbackup /etc/cron.d/sysmail /root/.cp.pid /root/.cp.result /root/.cp.pid1 /root/.rcproc /root/.rccp.pid1 /root/.back0 /root/.bash_time /root/.rccp.pid /root/.rccp.result /usr/local/cpanel/cpanel1 /usr/local/cpanel/.cpanel2 /usr/local/cpanel/.cpsrvd /usr/local/sectools );
     for my $dir (@dirs) {
         next if !-e $dir;
         $sendtomsg = CYAN "Please send to L3";
@@ -1628,6 +1633,7 @@ sub run_rdate {
     print_working("Checking if rdate completes without error:")
       unless ( !$verbose );
     my $rdatesuccess = qx[ rdate -s rdate.cpanel.net 2>&1 ];
+    chomp($rdatesuccess);
     if ($rdatesuccess) {
         print RED "\t\\_ Error - $rdatesuccess\n" unless ( !$verbose );
         push( @WARNINGS, "rdate command failed! [$rdatesuccess]" );
@@ -1707,9 +1713,6 @@ sub get_last_reboots {
 }
 
 sub getVerifyDATA {
-
-    #    return if ( !$verbose );
-    #    print_working("https://verify.cpanel.net data for $external_ip_address");
     my $regex          = qr{'([^']+)', '([^']+)', '([^']+)', '([^']+)', '([^']+)', '([^']+)'};
     my @DATAVerifyPage = qx[ curl -s "https://verify.cpanel.net/app/verify?ip=$external_ip_address&nohtml=1" | grep 'active' ];
     my $DataVerifyLine;
@@ -1733,9 +1736,6 @@ sub getVerifyDATA {
         chomp($LicPartner);
         chomp($LicActive);
         chomp($LicStatus);
-
-        #$DataVerifyLine =~ s/$regex/\t \\_ License ID: $1\n\t \\_ IP Address: $2\n\t \\_ License Type: $3\n\t \\_ Partner: $4\n\t \\_ Active Since $5\n\t \\_ Status: $6\n/;
-        #print BOLD GREEN "$DataVerifyLine";
     }
 }
 
@@ -1752,7 +1752,7 @@ sub Usage {
     print WHITE "cplicensets --withlogs displays last 50 lines of license_log file\n";
     print WHITE "cplicensets --skipdate skips date check which can sometimes fail\n";
     print WHITE "cplicensets --help You're looking at it!\n";
-    print "</c>\n";
+    print "```\n";
     exit;
 }
 
@@ -1939,14 +1939,19 @@ sub CSA {
 }
 
 sub proxy_chk {
-    my $is_listening = qx[ netstat -nap | grep 'LISTEN' | grep '43467' ];
-    if ($is_listening) {
-        $sendtomsg = CYAN "Please send to L3";
-        $L3        = 1;
-        push( @WARNINGS, "Possible proxy found on port 43467 - " . $sendtomsg ) unless ( !iam('cptech') );
+    my @ports2chk = qw( 43467 13555 );
+    my $port;
+    my $is_listening;
+    foreach $port(@ports2chk) { 
+        $is_listening = qx[ lsof -itcp:$port ];
+        if ($is_listening) {
+            $sendtomsg = CYAN "Please send to L3";
+            $L3        = 1;
+            push( @WARNINGS, "Possible proxy found listening on port: $port - " . $sendtomsg ) unless ( !iam('cptech') );
+        }
     }
 	if ( -d "/root/pc4" ) { 
-		if ( -e "/root/pc4/libproxychains4.so" or -e "/root/pc4/proxychains4" or -e "/root/pc4/cpsys2.conf") { 
+		if ( -e "/root/pc4/libproxychains4.so" or -e "/root/pc4/proxychains4" or -e "/root/pc4/cpsys2.conf" or -e "/root/pc4/proxychains-ng-master" ) { 
         	$sendtomsg = CYAN "Please send to L3";
         	$L3        = 1;
         	push( @WARNINGS, "Possible proxy found /root/pc4 directory exists - " . $sendtomsg ) unless ( !iam('cptech') );
@@ -1958,7 +1963,7 @@ sub proxy_chk {
     if ( $troute < 3 ) {
         $L3        = 1;
         $sendtomsg = CYAN "Please send to L3";
-        push( @WARNINGS, "Possible proxy found - " . $sendtomsg ) unless ( !iam('cptech') );
+        push( @WARNINGS, "Possible proxy found - (traceroute test)" . $sendtomsg ) unless ( !iam('cptech') );
     }
 }
 
@@ -1983,9 +1988,8 @@ sub get_hostname {
 }
 
 sub usercount {
-	my $totUsers = Cpanel::Config::LoadUserDomains::counttrueuserdomains();
-#    my $current_usersJSON = get_whmapi1('get_current_users_count');
-#    my $totUsers          = $current_usersJSON->{data}->{users};
+    my $totUsersJSON = get_whmapi1('get_current_users_count');
+    my $totUsers = $totUsersJSON->{data}->{users};
     return $totUsers;
 }
 
@@ -1993,6 +1997,12 @@ sub allowed {
     my $allowedJSON = get_whmapi1('get_maximum_users');
     my $totAllowed  = $allowedJSON->{data}->{maximum_users};
     return $totAllowed;
+}
+
+sub getProfileNode {
+    my $ProfileNodeJSON = get_whmapi1('get_current_profile');
+    my $ProfileNode = $ProfileNodeJSON->{data}->{name};
+    return $ProfileNode;
 }
 
 sub timed_run {
