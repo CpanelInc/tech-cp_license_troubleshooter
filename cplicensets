@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.22";
+my $version = "2.0.23";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $LicID;
@@ -122,17 +122,17 @@ our $cPLiscFile = '/usr/local/cpanel/cpanel.lisc';
 our $DEVinConf;
 our $envtype;
 
-print "\n```\n";
+#print "\n```\n";
 print MAGENTA "cPanel License Troubleshooter - Version: $version\n";
 module_sanity_check();
 if ($verifypage) {
     getVerifyJSON();
-    print "```\n";
+    #print "```\n";
     exit;
 }
 if ($withlogs) {
     read_last_50_lines_of_license_log();
-    print "```\n";
+    #print "```\n";
     exit;
 }
 Usage() if ($help);
@@ -251,7 +251,7 @@ if ( $warncnt > 0 ) {
         print RED "\t\\_ $warnmess\n";
     }
 }
-print "```\n";
+#print "```\n";
 exit;
 
 sub check_for_centOS5 {
@@ -269,7 +269,7 @@ sub check_for_centOS5 {
     return if !$rpm_dist_ver;
     return if ( $rpm_dist_ver > 5 );
     print_warn("Sorry, this cannot run on your version of OS!");
-    print "```\n";
+    #print "```\n";
     exit;
 }
 
@@ -1761,7 +1761,7 @@ sub Usage {
     print WHITE "cplicensets --withlogs displays last 50 lines of license_log file\n";
     print WHITE "cplicensets --skipdate skips date check which can sometimes fail\n";
     print WHITE "cplicensets --help You're looking at it!\n";
-    print "```\n";
+    #print "```\n";
     exit;
 }
 
