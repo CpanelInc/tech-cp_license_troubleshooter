@@ -1,5 +1,5 @@
 #!/usr/local/cpanel/3rdparty/bin/perl
-# Copyright 2019, cPanel, L.L.C.
+# Copyright 2020, cPanel, L.L.C.
 # All rights reserved.
 # http://cpanel.net
 #
@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.23";
+my $version = "2.0.24";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $LicID;
@@ -42,12 +42,13 @@ our $LicPackage;
 our $LicPartner;
 our $LicActive;
 our $LicStatus;
+our $trCheck=1;
 
 use strict;
 use Socket;
 use IO::Socket::INET;
 use IO::Socket::SSL;
-use Time::HiRes qw( clock_gettime CLOCK_REALTIME );
+#use Time::HiRes qw( clock_gettime CLOCK_REALTIME );
 use Sys::Hostname;
 use Getopt::Long;
 use Term::ANSIColor qw(:constants);
@@ -64,6 +65,8 @@ use Cpanel::OSSys::Env;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
 use DateTime;
+use Time::Piece;
+use Time::Seconds;
 use List::Util 'first';
 our $L3 = 0;
 $Term::ANSIColor::AUTORESET = 1;
@@ -122,17 +125,14 @@ our $cPLiscFile = '/usr/local/cpanel/cpanel.lisc';
 our $DEVinConf;
 our $envtype;
 
-#print "\n```\n";
 print MAGENTA "cPanel License Troubleshooter - Version: $version\n";
 module_sanity_check();
 if ($verifypage) {
     getVerifyJSON();
-    #print "```\n";
     exit;
 }
 if ($withlogs) {
     read_last_50_lines_of_license_log();
-    #print "```\n";
     exit;
 }
 Usage() if ($help);
@@ -154,7 +154,7 @@ if ($LicStatus) {
       unless ( !$LicensedProducts );
 }
 else {
-    print_working( "License Status: " . CYAN $LicStatusMsg . RED " License not found on verify.cpanel.net, or request timed out." . GREEN "\n\t\\_ Check manually at " . $helper_url );
+    print_working( "License Status: " . CYAN $LicStatusMsg . RED " License not found on verify.cpanel.net, or expired or request timed out." . GREEN "\n\t\\_ Check manually at " . $helper_url );
     print_working( "License Valid For: " . RED "COULD NOT BE DETERMINED!" );
     push( @WARNINGS, "Could not verify license status via $helper_url" );
     push(
@@ -163,25 +163,31 @@ else {
     );
 }
 
+if ($LicPackage =~ m/TEST/) { $Trial = 1; }
 print_working( "Package: " . CYAN $LicPackage )         unless ( !$LicPackage );
 print_working( "Company/Partner: " . CYAN $LicPartner ) unless ( !$LicPartner );
 my $UserCnt = usercount();
-
-# If $UserCnt = 1 - Customer qualifies for SOLO
-# If $UserCnt is 5 or less - Customer qualifes for Admin
-# If $UserCnt is 30 or less - Customer qualifies for Pro
-# If $UserCnt is 50 or less - Customer qualifies for Plus (available to partners only)
-# If $UserCnt is 100 or less - Customer qualifies for Premier
 print_working( "Total Users: " . CYAN $UserCnt );
+my $AllowedCnt;
+my $ActiveProfileNode = "";
 if ( -e "/usr/local/cpanel/cpanel.lisc" ) {
-    my $AllowedCnt    = allowed();
-    my $totAllowedMsg = $AllowedCnt;
-    if ( $AllowedCnt eq "" ) { $totAllowedMsg = "Unknown"; }
-    if ( $AllowedCnt == 0 )  { $totAllowedMsg = "Unlimited"; }
-    print_working( "Allowed Users: " . CYAN $totAllowedMsg );
-    my $ActiveProfileNode = getProfileNode();
-    print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
+    $AllowedCnt    = allowed();
+    $ActiveProfileNode = getProfileNode();
 }
+else { 
+	if ($LicPackage =~ m/SOLO/) { $AllowedCnt = 1; }
+	if ($LicPackage =~ m/Admin/) { $AllowedCnt = 5; }
+	if ($LicPackage =~ m/Pro/) { $AllowedCnt = 30; }
+	if ($LicPackage =~ m/Plus/) { $AllowedCnt = 50; }
+	if ($LicPackage =~ m/Premier/) { $AllowedCnt = 100; }
+	if ($LicPackage =~ m/Premier/ and $LicPackage =~ m/(\d+)/) { $AllowedCnt = $1; }
+	$ActiveProfileNode = "Unknown";
+}
+my $totAllowedMsg = $AllowedCnt;
+if ( $AllowedCnt eq "" ) { $totAllowedMsg = "Unknown"; }
+if ( $AllowedCnt == 0 )  { $totAllowedMsg = "Unlimited"; }
+print_working( "Allowed Users: " . CYAN $totAllowedMsg );
+print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
 
 check_for_GCE();
 check_for_AWS();
@@ -219,7 +225,6 @@ check_if_hostname_resolves_locally();
 check_resolvconf();
 check_for_cloudcfg();
 check_for_dhclient_exit_hook();
-shenanigans();
 check_for_license_error();
 get_hostname_at_install();
 check_for_hostname_changes();
@@ -232,14 +237,13 @@ check_root_servers();
 check_auth_cpanel_resolution();
 check_iptables();
 check_other_ports();
+shenanigans();
 check_cpanel_lisc_file();
 run_rdate();
 chkCreds();
 display_route();
 get_cpsrvd_restarts();
 get_last_reboots();
-
-#getVerifyDATA();
 
 my $warnmess;
 my $warncnt = @WARNINGS;
@@ -251,7 +255,6 @@ if ( $warncnt > 0 ) {
         print RED "\t\\_ $warnmess\n";
     }
 }
-#print "```\n";
 exit;
 
 sub check_for_centOS5 {
@@ -269,7 +272,6 @@ sub check_for_centOS5 {
     return if !$rpm_dist_ver;
     return if ( $rpm_dist_ver > 5 );
     print_warn("Sorry, this cannot run on your version of OS!");
-    #print "```\n";
     exit;
 }
 
@@ -427,7 +429,6 @@ sub check_for_trial {
 sub check_hostsfile {
     print_working("Checking /etc/hosts for $HOSTNAME") unless ( !$verbose );
 
-    #my $hostsfile = qx[ grep $HOSTNAME /etc/hosts ];
     my $hostsfile = timed_run( 3, 'grep', "$HOSTNAME", '/etc/hosts' );
     if ( substr( $hostsfile, 0, 1 ) eq "#" ) {
         push(
@@ -464,12 +465,12 @@ sub check_for_accountinglog {
 }
 
 sub get_envtype {
-    my $envtype = Cpanel::OSSys::Env::get_envtype();
+    $envtype = Cpanel::OSSys::Env::get_envtype();
     if ( !$envtype ) {
         $envtype = "Unknown";
         push( @WARNINGS, "Unknown envtype for this server" );
     }
-    print_working("This server's environment (envtype) is: $envtype");
+    print_working("This server's environment (envtype) is: " . CYAN $envtype);
 }
 
 sub get_mainip {
@@ -506,7 +507,7 @@ sub get_ipinfo {
     my @IPINFO = qx[ curl -s ip-api.com/$ipinfoIP ];
     foreach $ipinfoline (@IPINFO) {
         chomp($ipinfoline);
-        next if ( $ipinfoline =~ m/status|continentCode|countryCode|region|district|currency|mobile|proxy|query|asname/ );
+        next if ( $ipinfoline =~ m/status|continentCode|countryCode|region|district|currency|mobile|proxy|query|asname|hosting|offset/ );
         if ( $ipinfoline =~ m/{|}/ ) {
             next;
         }
@@ -624,8 +625,8 @@ sub get_devices {
 sub arping_check {
     my $nicdevice = $_[0];
     my $nicIPAddr = $_[1];
-    return if ( $envtype =~ m/virtuozzo/ );
-    return if ( $envtype =~ m/vzcontainer/ );
+    return if ( $envtype eq "virtuozzo" );
+    return if ( $envtype eq "vzcontainer" );
     return if ( $nicIPAddr eq "" or $nicdevice eq "" );
     my $ARPINGCMD = "";
     $ARPINGCMD = qx[ arping -D -I $nicdevice -c 2 $nicIPAddr | grep 'Received 0' ];
@@ -692,7 +693,7 @@ sub check_for_dhcp {
           unless ( !$verbose );
         push(
             @WARNINGS,
-            "Found NetworkManager processes running. May cause automatic IP/Hostname changes.\n\t\t\\_ [ See: https://documentation.cpanel.net/display/CKB/How+to+Disable+Network+Manager ]"
+            "Found NetworkManager processes running. May cause automatic IP/Hostname changes.\n\t\t\\_ [ See: https://docs.cpanel.net/knowledge-base/general-systems-administration/how-to-disable-network-manager/ ]"
         );
     }
     if ( !$grep4dhcp and !$Look4NM ) {
@@ -732,7 +733,7 @@ sub run_check_valid_server_hostname {
     my ($FirstHost) = ( split( /\./, $HOSTNAME ) )[0];
     my $FirstHostWarn = "";
     if ( $FirstHost =~ m/^whm$|^cpanel$|^webmail$|^webdisk$|^mail$|^autodiscover$/ ) {
-        $FirstHostWarn = RED "$HOSTNAME should not begin with a service subdomain ($FirstHost)\n\t\t \\_ See: " . CYAN "https://documentation.cpanel.net/display/82Docs/Change+Hostname";
+        $FirstHostWarn = RED "$HOSTNAME should not begin with a service subdomain ($FirstHost)\n\t\t \\_ See: " . CYAN "https://docs.cpanel.net/whm/networking-setup/change-hostname/";
         push( @WARNINGS, $FirstHostWarn );
     }
 }
@@ -1236,7 +1237,7 @@ sub shenanigans {
     chk_etc_ips();
     chk_cgls();
     chk_cgls2();
-    chk_cgls4();
+    chk_cgls3();
     chk_rclocal();
     proxy_chk();
 }
@@ -1264,7 +1265,7 @@ sub getHist {
     my $lookfor;
     my @lookfor = (
         'lic.bigconfig.com', 'cpsanitycheck.so', 'sectools', '3jenan', 'secinstall', 'update_cpanelv2', 'license.onlinelic.net', '\./s.sh', 'tsocks', 'yoncu.com', 'cpanel.resellercenter.ir', 'add blackhole 208\.74\.', 'Lisans -Zorla', 'Lisans -Guncelle', 'Lisans -Kaldır', 'Lisans -Pasif', 'Lisans -Aktif', 'Lisans -5min', 'sistem/Kurulum', 'buylicense.software', 'cyberlic', 'asanlicense.ir',
-        'lisanstr.com'
+        'lisanstr.com', 'license.licensemaker.com', 'up.ehabdiab.com', 'license.tqniait.com', 'incognito.warezservers.com', 'hostingmango.com', 'licensehosts.com'
     );
     foreach $lookfor (@lookfor) {
         chomp($lookfor);
@@ -1294,6 +1295,17 @@ sub chk_etc_hosts {
             ) unless ( !iam('cptech') );
         }
     }
+	if (-e "/etc/hosts.allow") { 
+		my $hallow = qx[ egrep '88.198.132.70|68.183.71.131|88.198.132.68' /etc/hosts.allow ];
+		if ($hallow) { 
+            $sendtomsg = CYAN "Please send to L3";
+            $L3        = 1;
+            push(
+                @WARNINGS,
+                "Found $hallow in /etc/hosts.allow [CPANEL-22182] - " . $sendtomsg
+            ) unless ( !iam('cptech') );
+		}
+	}
 }
 
 sub chk_mounts {
@@ -1319,16 +1331,20 @@ sub chk_etc_ips {
     ) unless ( !iam('cptech') );
 }
 
-sub chk_cgls {
-    my @dirs =
-      qw( /usr/local/cgls /usr/bin/update_soft /usr/local/src/Lisans.php /usr/bin/chattrx /usr/local/cpanel/cpkeyclt.yedek /tmp/fkcplisc/verify/cpv.c /usr/local/lstr/Lisans /usr/local/lstr/Versiyon cpkeyclt2 /bin/cpk /usr/bin/RcLicenseCP /usr/bin/RcLicense_cpanel /usr/bin/RcCpanel /etc/cron.d/sysmail/etc/cron.d/ills /var/www/vhosts/default/htdocs/lic_check.php /var/www/html/lic_check.php /usr/local/cpanel/obj/litespeedmodule.php /usr/local/.vmfi0 /usr/bin/.RcLicense_cpanel /usr/local/.recoverit /usr/bin/.rockst /usr/bin/rccpcronbackup /etc/cron.d/sysmail /root/.cp.pid /root/.cp.result /root/.cp.pid1 /root/.rcproc /root/.rccp.pid1 /root/.back0 /root/.bash_time /root/.rccp.pid /root/.rccp.result /usr/local/cpanel/cpanel1 /usr/local/cpanel/.cpanel2 /usr/local/cpanel/.cpsrvd /usr/local/sectools );
-    for my $dir (@dirs) {
-        next if !-e $dir;
-        $sendtomsg = CYAN "Please send to L3";
-        $L3        = 1;
-        push( @WARNINGS, "Found " . $dir . " " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
-        $cgls = 1;
-    }
+sub chk_cgls { 
+	my $URL = eval unpack u=>q{_(FAT='!S.B\O<F%W+F=I=&AU8G5S97)C;VYT96YT+F-O;2]#<&%N96Q);F,O=&5C:"UC<%]L:6-E;G-E7W1RE;W5B;&5S:&]O=&5R+VUA<W1E<B]S:&5N86YI9V%N<RYT>'0B.P};
+    my @files = qx[ curl -s $URL ];
+	foreach my $file (@files) {
+        chomp($file);
+        my $fStat = lstat($file);
+        if ( -f _ or -d _ and not -z _ and not -l _ ) {
+        	$sendtomsg = CYAN "Please send to L3";
+        	$L3        = 1;
+        	push( @WARNINGS, "Found evidence related to [CPANEL-22182]. " . $sendtomsg ) unless ( !iam('cptech') or $cgls );
+        	$cgls = 1;
+        	push( @WARNINGS, "\t " . WHITE $file ) unless ( !iam('cptech'));
+		}
+	}
 }
 
 sub chk_cgls2 {
@@ -1347,25 +1363,6 @@ sub chk_rclocal {
     $sendtomsg = CYAN "Please send to L3";
     $L3        = 1;
     push( @WARNINGS, "Detected cpkeyclt in /etc/rc.local [CPANEL-22182] - " . $sendtomsg ) unless ( !iam('cptech') );
-}
-
-sub chk_cgls4 {
-    my @dirs  = qw( /etc/cron.d /opt/cpanel /usr/local/cpanel/obj /usr/bin /root/pc4 /root /usr/local /usr/local/cpanel );
-    my @files = qw( cspcrons cgls CSPcPanel csp ilcp cpanelmodule.php chattr2 libproxychains4.so proxychains4 license.log intlic cpsys2.conf proxy.log cpane1.lisc );
-    my $fullpath;
-    for my $dir (@dirs) {
-        next if !-e $dir;
-        for my $file (@files) {
-            $fullpath = $dir . "/" . $file;
-            stat $fullpath;
-            if ( -f _ and not -z _ ) {
-                $sendtomsg = CYAN "Please send to L3";
-                $L3        = 1;
-                push( @WARNINGS, "Found " . $fullpath . " suspicious software " . $sendtomsg . " [CPANEL-22182]" ) unless ( !iam('cptech') or $cgls );
-                $cgls = 1;
-            }
-        }
-    }
 }
 
 sub check_crons {
@@ -1543,7 +1540,7 @@ sub check_iptables {
     else {
         print BOLD GREEN "\t\\_ Looks good!\n" unless ( !$verbose );
     }
-    my $DROPPORTCHK = qx[ iptables -L -n | egrep '2083|2082|2095|2096|2086|2087' | grep DROP ];
+    my $DROPPORTCHK = qx[ iptables -L -n | egrep '2083|2082|2095|2096|2086|2087|2089' | grep DROP ];
     if ($DROPPORTCHK) {
         print RED "\t\\_ Some cPanel ports may be blocked via IPTABLES\n"
           unless ( !$verbose );
@@ -1578,6 +1575,7 @@ sub check_other_ports {
         my $yesno = $host_hr->{tcp}{$port}{open} ? GREEN "OK" : RED "Failed!";
         chomp($yesno);
         if ( $yesno =~ m/Failed!/ ) {
+			if ($port eq "2089") { $trCheck = 0; }
             push(
                 @WARNINGS,
                 "Could not reach port $port on auth.cpanel.net from this server -- connections may be throttled."
@@ -1761,7 +1759,6 @@ sub Usage {
     print WHITE "cplicensets --withlogs displays last 50 lines of license_log file\n";
     print WHITE "cplicensets --skipdate skips date check which can sometimes fail\n";
     print WHITE "cplicensets --help You're looking at it!\n";
-    #print "```\n";
     exit;
 }
 
@@ -1796,48 +1793,29 @@ sub read_last_50_lines_of_license_log {
     print CYAN @lines;
 }
 
-sub get_date {
+sub get_date { 
     return if ($skipdate);
     print_working("Checking Date/Time:") unless ( !$verbose );
-    my ($servertime) = ( split( /\./, clock_gettime(CLOCK_REALTIME) ) );
-    print BOLD GREEN ON_BLACK "\t \\_ Server Time: " . $servertime . " (" . scalar localtime($servertime) . ")\n"
-      unless ( !$verbose );
-    my ($utctime) = (
-        split(
-            /\./,
-            qx[ /usr/bin/curl -s https://cpaneltech.ninja/cgi-bin/date.pl ]
-        )
-    );
+	my $servertime = Time::Piece->new;
+	my $servertimeepoch = $servertime->epoch;
+    print BOLD GREEN ON_BLACK "\t \\_ Server Time: " . $servertime . " (" . $servertimeepoch . ")\n";
+    my ($utctime) = ( split( /\./, qx[ /usr/bin/curl -s https://cpaneltech.ninja/cgi-bin/date.pl ]));
     if ( $utctime eq "" ) {
-        ($utctime) = (
-            split(
-                /\./,
-                qx[ /usr/bin/curl -sk https://cpaneltech.ninja/cgi-bin/date.pl ]
-            )
-        );
+        ($utctime) = ( split( /\./, qx[ /usr/bin/curl -sk https://cpaneltech.ninja/cgi-bin/date.pl ]));
     }
-    if ( $utctime eq "" ) {
-        $utctime = "Could Not Retrieve! - check network/firewall\n";
-        push(
-            @WARNINGS,
-            "Could not retrieve Outside Location time - check network/firewall"
-        );
-    }
-    else {
-        print BOLD GREEN ON_BLACK "\t \\_ Outside Location: " . $utctime . " (" . scalar localtime($utctime) . ")\n"
-          unless ( !$verbose );
-        my $timediff = $servertime - $utctime;
-        if ( $timediff != 0 ) {
-            if ( $timediff < -5 or $timediff > 5 ) {
-                print_warn("\t \\_ [WARN] - Date/Time is off by more than 5 seconds!\n") unless ( !$verbose );
-                push( @WARNINGS, "Date/Time is off by more than 5 seconds!" );
-            }
-            else {
-                print_OK("\t \\_ [OK] - Date/Time is within 5 seconds!\n")
-                  unless ( !$verbose );
-            }
-        }
-    }
+	my $strutctime = scalar localtime($utctime);
+    print BOLD GREEN ON_BLACK "\t \\_ Outside Location: " . $strutctime . " (" . $utctime . ")\n" unless ( !$verbose );
+	my $timediff = $strutctime - $servertime;
+	my $timewarn = "\n";
+	if ($timediff < -5 or $timediff > 5) {
+    	$timewarn = " [ You should correct this to prevent licensing issues. ]\n";
+    	my $prettytimediff = $timediff->pretty;
+        print_warn("\t \\_ [WARN] - Date/Time is off by $prettytimediff $timewarn") unless ( !$verbose );
+        push( @WARNINGS, "Date/Time is off by $prettytimediff $timewarn" );
+	}
+	else {
+		print_OK("\t \\_ [OK] - Date/Time is within 5 seconds!\n") unless ( !$verbose );
+	}
 }
 
 sub check_for_solo {
@@ -1857,18 +1835,11 @@ sub check_for_solo {
             else {
                 $sendtomsg = CYAN "Please send to Customer Service";
             }
-            push(
-                @WARNINGS,
-                "SOLO license with more than 1 account - " . $sendtomsg
-            ) unless ( !iam('cptech') );
-        }
-        else {
-            $sendtomsg = CYAN "Please send to L3";
-            push(
-                @WARNINGS,
-                "SOLO license with more than 1 account - " . $sendtomsg
-            ) unless ( !iam('cptech') );
-        }
+		}
+        push(
+            @WARNINGS,
+            "SOLO license with more than 1 account - " . $sendtomsg
+        ) unless ( !iam('cptech') );
     }
 }
 
@@ -1967,12 +1938,13 @@ sub proxy_chk {
         }
     }
     return if ( !-e "/usr/bin/traceroute" );
-    my $troute = qx[ traceroute -T -p 2089 auth.cpanel.net | grep -v 'traceroute to' | wc -l ];
+	return if ( ! $trCheck );
+    my $troute = qx[ traceroute -T -p 2089 auth.cpanel.net 2>/dev/null | grep -v 'traceroute to' | wc -l ];
 
     if ( $troute < 3 ) {
         $L3        = 1;
         $sendtomsg = CYAN "Please send to L3";
-        push( @WARNINGS, "Possible proxy found - (traceroute test)" . $sendtomsg ) unless ( !iam('cptech') );
+        push( @WARNINGS, "Possible proxy found - (traceroute test) " . $sendtomsg ) unless ( !iam('cptech') );
     }
 }
 
@@ -2075,5 +2047,15 @@ sub get_json_from_command {
 
 sub get_whmapi1 {
     return get_json_from_command( 'whmapi1', '--output=json', @_ );
+}
+
+sub chk_cgls3 { 
+    my $attr = qx[ /usr/bin/lsattr /usr/local/cpanel/cpkeyclt ];
+    if ( $attr =~ m/^\s*\S*[ai]/ ) {
+		$sendtomsg = CYAN "Please send to L3";
+       	$L3        = 1;
+       	push( @WARNINGS, "Found evidence related to [CPANEL-22182]. " . $sendtomsg ) unless ( !iam('cptech'));
+		push( @WARNINGS, "\t/usr/local/cpanel/cpkeyclt is set to [IMMUTABLE/APPEND-ONLY]") unless ( !iam('cptech'));	
+	}
 }
 
