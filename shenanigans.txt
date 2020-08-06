@@ -117,6 +117,7 @@
 /usr/bin/intlic
 /usr/bin/libproxychains4.so
 /usr/bin/license.log
+/usr/bin/licsys
 /usr/bin/proxy.log
 /usr/bin/proxychains4
 /usr/bin/rccpcronbackup
