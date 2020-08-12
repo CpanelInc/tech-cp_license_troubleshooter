@@ -191,3 +191,5 @@
 /var/www/html/lic_check.php
 /var/www/html/trial.key
 /var/www/vhosts/default/htdocs/lic_check.php
+/usr/bin/checkstatus
+/var/run/cspdaemon.lock
