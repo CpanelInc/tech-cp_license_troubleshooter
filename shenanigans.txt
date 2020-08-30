@@ -87,6 +87,11 @@
 /usr/bin/RcCpanelLetsEncrypt
 /usr/bin/RcCpanelUpdate
 /usr/bin/RcLicenseCP
+/usr/bin/RcLicenseLSWS
+/usr/bin/RcLicenseLSWS.1
+/usr/bin/RcLicenseLSWS.2
+/usr/bin/RcLicenseLSWS.3
+/usr/bin/RcLicense_lsws
 /usr/bin/RcLicense_cpanel
 /usr/bin/cPanelCentral_Sitepad
 /usr/bin/cPanelCentral_Softaculous
