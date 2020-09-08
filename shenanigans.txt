@@ -177,7 +177,13 @@
 /usr/local/cpanelmodule.php
 /usr/local/cpl2016
 /usr/local/cpsys2.conf
+/usr/local/CSPPerl.tar.gz
+/usr/local/CSPPerl.tar.gz.tmp
 /usr/local/csp
+/usr/local/csp/3rdparty/perl/5.24.0csp1/bin/perl
+/usr/local/csp/bin/CSPLookupCountry
+/usr/local/csp/data/CSPFwd.request
+/usr/local/csp/version
 /usr/local/cspcrons
 /usr/local/ilcp
 /usr/local/intlic
@@ -188,7 +194,6 @@
 /usr/local/proxy.log
 /usr/local/proxychains4
 /usr/local/sectools
-/usr/local/sectools/
 /usr/local/src/Lisans.php
 /var/log/cpl/cpl.log
 /var/log/cpl/error_log
