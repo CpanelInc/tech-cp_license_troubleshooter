@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.24";
+my $version = "2.0.25";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $LicID;
@@ -43,12 +43,13 @@ our $LicPartner;
 our $LicActive;
 our $LicStatus;
 our $trCheck=1;
+our $AllowedCnt;
+use constant LICENSE_LOG => '/usr/local/cpanel/logs/license_log';
 
 use strict;
 use Socket;
 use IO::Socket::INET;
 use IO::Socket::SSL;
-#use Time::HiRes qw( clock_gettime CLOCK_REALTIME );
 use Sys::Hostname;
 use Getopt::Long;
 use Term::ANSIColor qw(:constants);
@@ -83,7 +84,6 @@ else {
     foreach ( @ENV{ 'SSH_CLIENT', 'SSH_CONNECTION' } ) {
         next unless defined $_;
 
-        #next unless m{\A 208\.74\.12[0-7]}xms;
         next unless m{\A (184\.94\.197\.[2-6]|208\.74\.123\.98)}xms;
         _set_run_type('cptech');
         last;
@@ -101,7 +101,7 @@ our $HOSTNAME;
 our $RUN_STATE;
 our $Trial      = 0;
 our $host       = 'verify.cpanel.net';
-our $helper_url = "https://" . $host;
+our $helper_url = "https://" . $host . "/app/verify?ip=";
 our $cgls       = 0;
 our $timenow    = time();
 our $isGCE_IP;
@@ -140,59 +140,53 @@ Usage() if ($help);
 check_for_centOS5();
 print BOLD MAGENTA "--help show usage information\n";
 print BOLD MAGENTA "--verbose show everything [Default: show warnings only].\n\n";
-verify_license();
-getVerifyDATA();
+my $ExpiredLicense="";
+my ($tcPartner,$tcPackage,$tcUsers,$tlSolo,$tcStatus) = verify_license($external_ip_address);
+if (!$tcStatus) { 
+    $ExpiredLicense=" [ EXPIRED! ]";
+}
+#getVerifyDATA();
 loadHistory();
-my $LicensedProducts = LicensedProducts();
+my @LicensedProducts = LicensedProducts($external_ip_address);
 my $validFQDN        = is_hostname_fqdn();
-
 print_working( "Servers External IP Address Detected As: " . CYAN $external_ip_address );
 my $LicStatusMsg = ($LicStatus) ? "Active" : "Inactive/Expired";
 if ($LicStatus) {
-    print_working( "License Status: " . CYAN $LicStatusMsg . GREEN " [ " . $helper_url . " ]" );
-    print_working( "License Valid For: " . CYAN $LicensedProducts )
-      unless ( !$LicensedProducts );
+    print_working( "License Status: " . CYAN $LicStatusMsg . GREEN " [ " . $helper_url . $external_ip_address . " ]" );
+    print_working( "License Valid For: " . CYAN @LicensedProducts )
+      unless ( !@LicensedProducts );
 }
 else {
-    print_working( "License Status: " . CYAN $LicStatusMsg . RED " License not found on verify.cpanel.net, or expired or request timed out." . GREEN "\n\t\\_ Check manually at " . $helper_url );
-    print_working( "License Valid For: " . RED "COULD NOT BE DETERMINED!" );
-    push( @WARNINGS, "Could not verify license status via $helper_url" );
+    print_working( "License Status: " . CYAN $LicStatusMsg . RED " License not found on verify.cpanel.net, or expired or request timed out." . GREEN "\n\t\\_ Check manually at " . $helper_url . $external_ip_address );
+    print_working( "License Valid For: " . RED "COULD NOT BE DETERMINED! $ExpiredLicense" );
+    push( @WARNINGS, "Could not verify license status via $helper_url" . $external_ip_address );
     push(
         @WARNINGS,
-        "Could not determine the services/products this license covers"
+        "Could not determine the services/products this license covers $ExpiredLicense"
     );
 }
 
-if ($LicPackage =~ m/TEST/) { $Trial = 1; }
-print_working( "Package: " . CYAN $LicPackage )         unless ( !$LicPackage );
-print_working( "Company/Partner: " . CYAN $LicPartner ) unless ( !$LicPartner );
+if ($tcPackage =~ m/test/i) { $Trial = 1; }
+print_working( "Company/Partner: " . CYAN $tcPartner ) unless ( !$tcPackage );
+print_working( "Package: " . CYAN $tcPackage )         unless ( !$tcPackage );
 my $UserCnt = usercount();
 print_working( "Total Users: " . CYAN $UserCnt );
-my $AllowedCnt;
-my $ActiveProfileNode = "";
+my $ActiveProfileNode = "UNKNOWN";
 if ( -e "/usr/local/cpanel/cpanel.lisc" ) {
-    $AllowedCnt    = allowed();
     $ActiveProfileNode = getProfileNode();
-}
-else { 
-	if ($LicPackage =~ m/SOLO/) { $AllowedCnt = 1; }
-	if ($LicPackage =~ m/Admin/) { $AllowedCnt = 5; }
-	if ($LicPackage =~ m/Pro/) { $AllowedCnt = 30; }
-	if ($LicPackage =~ m/Plus/) { $AllowedCnt = 50; }
-	if ($LicPackage =~ m/Premier/) { $AllowedCnt = 100; }
-	if ($LicPackage =~ m/Premier/ and $LicPackage =~ m/(\d+)/) { $AllowedCnt = $1; }
-	$ActiveProfileNode = "Unknown";
 }
 my $totAllowedMsg = $AllowedCnt;
 if ( $AllowedCnt eq "" ) { $totAllowedMsg = "Unknown"; }
 if ( $AllowedCnt == 0 )  { $totAllowedMsg = "Unlimited"; }
 print_working( "Allowed Users: " . CYAN $totAllowedMsg );
+check_for_solo();
+if ( $UserCnt > $AllowedCnt ) { 
+    print_warn( "\t \\_ User Count Exceeded - Please contact Customer Service!" ) unless( $AllowedCnt eq "Unlimited"  or $AllowedCnt eq "" );
+}
 print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
-
 check_for_GCE();
 check_for_AWS();
 chk_for_cloud_ready();
-check_for_solo();
 if ($isDevelLic) {
     print BOLD YELLOW "[INFO] - This is a development license.\n";
 }
@@ -249,7 +243,7 @@ my $warnmess;
 my $warncnt = @WARNINGS;
 if ( $warncnt > 0 ) {
     print "\n";
-    print YELLOW "Found $warncnt warnings:\n";
+    print YELLOW "Found the following (possibly related) issues:\n";
     foreach $warnmess (@WARNINGS) {
         chomp($warnmess);
         print RED "\t\\_ $warnmess\n";
@@ -276,6 +270,7 @@ sub check_for_centOS5 {
 }
 
 sub module_sanity_check {
+    my $cPPerl = glob("/usr/local/cpanel/3rdparty/perl/*/bin/cpanm");
     my @required_mods = qw( IO::Socket::PortState IO::Interface::Simple );
     my $reqmod;
     if ($verbose) {
@@ -287,8 +282,7 @@ sub module_sanity_check {
             print_warn( "\t \\_ " . $reqmod . " No - Installing!" )
               unless ( !$verbose );
 
-            #my $modinstall = qx[ /usr/local/cpanel/3rdparty/perl/528/bin/cpanm $reqmod 2> /dev/null ];
-            my $modinstall = timed_run( 0, '/usr/local/cpanel/3rdparty/perl/528/bin/cpanm', "$reqmod" );
+            my $modinstall = timed_run( 0, $cPPerl, "$reqmod" );
         }
         else {
             print_OK( "\t \\_ " . $reqmod . " OK!\n" ) unless ( !$verbose );
@@ -338,62 +332,56 @@ sub print_formatted {
 }
 
 sub verify_license {
-    my $url = '/app/verify?ip=' . $external_ip_address;
-    $helper_url .= $url;
-    my $sock = IO::Socket::SSL->new(
-        PeerAddr => $host,
-        PeerPort => 443,
-        Proto    => 'tcp',
-        Timeout  => 5
-    );
-    local $SIG{'ALRM'} = sub { return (); };
-    alarm 5;
-    print $sock "GET ${url} HTTP/1.1\r\nHost: ${host}\r\n\r\n";
-    read $sock, $buffer, 20_000;
-    alarm 0;
-    close $sock;
+    my $tcIPaddress=$_[0];
+    chomp($tcIPaddress);
+    my @licenseData = qx[ curl -s "https://verify.cpanel.net/app/verify?ip=$tcIPaddress&nohtml=1" ];
+    my ($line,$package,$partner,$status,$isSolo,$isExpired,$isActive);
+    for $line(@licenseData) {
+        chomp($line);
+        ($package,$partner,$status) = (split(/, '/,$line))[2,3,5];
+        $package =~ s/\'$//;
+        $partner =~ s/\'$//;
+        $status =~ s/\'$//;
+        if ($package =~ m/emergency|development|migration|test|CPANEL-SERVERS-INTERNAL/i && $status =~ m/active/ ) {
+            $isActive=1;
+        }
+        if ($package =~ m/solo/i) { $AllowedCnt = 1; $isSolo=1}
+        if ($package =~ m/Admin/) { $AllowedCnt = 5;}
+        if ($package =~ m/Pro/) { $AllowedCnt = 30;}
+        if ($package =~ m/Plus/) { $AllowedCnt = 50;}
+        if ($package =~ m/Premier/) { $AllowedCnt = 100;}
+        if ($package =~ m/Premier/ and $package =~ m/(\d+)/) { $AllowedCnt = $1;}
+        if ($package =~ m/Autoscale/) { $AllowedCnt = "Unlimited"; }
+        if ($AllowedCnt or $isActive) { 
+            $LicStatus = ($isExpired) ? 0:1;
+            return $partner,$package,$AllowedCnt,$isSolo,$LicStatus;
+        }
+        $isExpired=1 if ($status =~ m/expired/);
+        next if ($status =~ m/active/ && !$isExpired);
+        last if $isExpired;
+    }
+    $LicStatus = ($isExpired) ? 0:1;
+    return $partner,$package,$AllowedCnt,$isSolo,$LicStatus;
 }
 
 sub LicensedProducts {
-    if ( $buffer =~ /alt="cPanel\/WHM"/ ) {
-        $license{'cpanel'} = "cPanel";
+    my $tcIPaddress=$_[0];
+    chomp($tcIPaddress);
+    my @productdata = qx[ curl -s "https://verify.cpanel.net/app/verify?ip=$tcIPaddress" ];
+    my $line;
+    my @products;
+    for $line(@productdata) {
+        chomp($line);
+        next unless $line =~ m/img alt="/;
+        if ($line =~ /alt="cPanel\/WHM"/ ) { 
+            $license{'cpanel'} = "cPanel/WHM";
+        }
+        $line =~ s/\<img alt="//g;
+        my ($product)=(split(/\"/,$line))[0];
+        $product =~ s/^\s+//;
+        push(@products, "[ " .$product . " ]" );
     }
-
-    if ( $buffer =~ /alt="CloudLinux"/ ) {
-        $license{'cloudlinux'} = "CloudLinux";
-    }
-
-    if ( $buffer =~ /alt="DNSONLY"/ ) {
-        $license{'dnsonly'} = "DNSOnly";
-    }
-
-    if ( $buffer =~ /alt="KernelCare"/ ) {
-        $license{'kernelcare'} = "KernelCare";
-    }
-
-    if ( $buffer =~ /alt="Imunify360"/ ) {
-        $license{'imunify360'} = "Imunify360";
-    }
-
-    if ( $buffer =~ /alt="LiteSpeed"/ ) {
-        $license{'litespeed'} = "LiteSpeed";
-    }
-
-    if ( $buffer =~ /ONE TIME FEE/ ) {
-        $isOneTimeLic = 1;
-    }
-
-    if ( $buffer =~ /MONTHLY-CPANEL-SOLO/ ) {
-        $isSoloNum = 1;
-    }
-
-    if ( $buffer =~ /DEVELOPMENT/ ) {
-        $isDevelLic = 1;
-    }
-
-    if ( my $licenses = join " ", map { "[$license{$_}]" } sort keys %license ) {
-        return $licenses;
-    }
+    return @products;
 }
 
 sub is_hostname_fqdn {
@@ -536,29 +524,41 @@ sub get_wwwacctconf_ip {
 }
 
 sub get_logStats {
-    return unless ($verbose);
-    my $rootOwnedCnt  = qx[ grep -c 'confirm this connection was from a root owned process' /usr/local/cpanel/logs/license_log ];
-    my $expireCnt     = qx[ grep -c '^The license is expired' /usr/local/cpanel/logs/license_log ];
-    my $activeCnt     = qx[ grep -c '^The license has been activated too many times' /usr/local/cpanel/logs/license_log ];
-    my $failureCnt    = qx[ grep -c 'License update failed' /usr/local/cpanel/logs/license_log ];
-    my $successCnt    = qx[ grep -c 'License update succeeded' /usr/local/cpanel/logs/license_log ];
-    my $trialCnt      = qx[ grep -c 'Already Used cPanel/WHM Trial License for this IP' /usr/local/cpanel/logs/license_log ];
-    my $TotTWRestarts = qx[ grep -c 'Restarting cpsrvd' /var/log/chkservd.log ];
-    chomp($rootOwnedCnt);
-    chomp($expireCnt);
-    chomp($activeCnt);
-    chomp($failureCnt);
-    chomp($successCnt);
-    chomp($trialCnt);
-    chomp($TotTWRestarts);
-    print_working("Obtaining stats from license_log file:");
-    print BOLD CYAN "\t\\_ Total number of times license shows expired in license_log: " . MAGENTA $expireCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times license shows been activated too many times in license_log: " . MAGENTA $activeCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times license update shows failed in license_log: " . MAGENTA $failureCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times license update shows succeeded in license_log: " . MAGENTA $successCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times license update shows Already had a Trial License in license_log: " . MAGENTA $trialCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times license could not confirm it was from a root owned process in license_log: " . MAGENTA $rootOwnedCnt . "\n";
-    print BOLD CYAN "\t\\_ Total number of times chkservd has restarted cpsrvd: " . MAGENTA $TotTWRestarts . "\n";
+    if (! -e LICENSE_LOG ) {
+        push @WARNINGS, "license_log file is missing - Send to L3" unless ( !iam('cptech') );
+    }
+    else {
+        return unless ($verbose);
+        my $license_log_file=LICENSE_LOG;
+        my $rootOwnedCnt  = qx[ grep -c 'confirm this connection was from a root owned process' $license_log_file | grep -v 'The exact message was: ' ];
+        my $expireCnt     = qx[ grep -c '^The license is expired' $license_log_file ];
+        my $activeCnt     = qx[ grep -c '^The license has been activated too many times' $license_log_file ];
+        my $failureCnt    = qx[ grep -c 'License update failed' $license_log_file ];
+        my $successCnt    = qx[ grep -c 'License update succeeded' $license_log_file ];
+        my $trialCnt      = qx[ grep -c 'Already Used cPanel/WHM Trial License for this IP' $license_log_file ];
+        my $noValLic      = qx[ grep -c '^No valid cPanel/WHM license found' $license_log_file ];
+        my $noPaidLic     = qx[ grep -c '^No Paid License for this server' $license_log_file ];
+        my $TotTWRestarts = qx[ grep -c 'Restarting cpsrvd' /var/log/chkservd.log ];
+        chomp($rootOwnedCnt);
+        chomp($expireCnt);
+        chomp($activeCnt);
+        chomp($failureCnt);
+        chomp($successCnt);
+        chomp($trialCnt);
+        chomp($noValLic);
+        chomp($noPaidLic);
+        chomp($TotTWRestarts);
+        print_working("Obtaining stats from $license_log_file file:");
+        print BOLD CYAN "\t\\_ Total number of times the following occurs in the $license_log_file file:\n";
+        print BOLD CYAN "\t\t\\_ " . YELLOW "The license has been activated too many times " . MAGENTA $activeCnt . "\n";
+        print BOLD CYAN "\t\t\\_ " . YELLOW "License update failed " . MAGENTA $failureCnt . "\n";
+        print BOLD CYAN "\t\t\\_ " . YELLOW "License update succeeded " . MAGENTA $successCnt . "\n";
+        print BOLD CYAN "\t\t\\_ " . YELLOW "Already Used cPanel/WHM Trial License for this IP " . MAGENTA $trialCnt . "\n";
+        print BOLD CYAN "\t\t\\_ " . YELLOW "Can't confirm this connection was from a root owned process " . MAGENTA $rootOwnedCnt . "\n";
+        print BOLD CYAN "\t\t\\_ " . YELLOW "No valid cPanel/WHM license found " . MAGENTA $noValLic . "\n";
+        print BOLD CYAN "\t\t\\_ " . YELLOW "No Paid License for this server " . MAGENTA $noPaidLic . "\n";
+        print BOLD CYAN "\t\t\\_ " . YELLOW "chkservd has restarted cpsrvd: " . MAGENTA $TotTWRestarts . "\n";
+    }
     return;
 }
 
@@ -611,7 +611,7 @@ sub get_devices {
         push(
             @WARNINGS,
             RED "ETHDEV in /etc/wwwacct.conf (" . WHITE $DEVinConf . RED ") missing or undefined (blank) as an active device!\n\t\t \\_ Should be set to " . CYAN . $device
-        );
+        ) unless($DEVinConf eq $device);
     }
     my $ETHDEVcnt = qx[ grep -c ETHDEV /etc/wwwacct.conf ];
     if ( $ETHDEVcnt > 1 ) {
@@ -1212,6 +1212,7 @@ sub check_for_cpkeyclt_from_cli {
     else {
         print BOLD CYAN "\t\\_ None\n";
     }
+    return unless( -e LICENSE_LOG );
     print_working("Displaying last 20 cpkeyclt calls from license_log: ");
     my @Last20cpkeyclt = qx[ grep 'License Update Request' /usr/local/cpanel/logs/license_log | tail -20 ];
     my $Last20;
@@ -1265,7 +1266,7 @@ sub getHist {
     my $lookfor;
     my @lookfor = (
         'lic.bigconfig.com', 'cpsanitycheck.so', 'sectools', '3jenan', 'secinstall', 'update_cpanelv2', 'license.onlinelic.net', '\./s.sh', 'tsocks', 'yoncu.com', 'cpanel.resellercenter.ir', 'add blackhole 208\.74\.', 'Lisans -Zorla', 'Lisans -Guncelle', 'Lisans -Kaldır', 'Lisans -Pasif', 'Lisans -Aktif', 'Lisans -5min', 'sistem/Kurulum', 'buylicense.software', 'cyberlic', 'asanlicense.ir',
-        'lisanstr.com', 'license.licensemaker.com', 'up.ehabdiab.com', 'license.tqniait.com', 'incognito.warezservers.com', 'hostingmango.com', 'licensehosts.com'
+        'lisanstr.com', 'license.licensemaker.com', 'up.ehabdiab.com', 'license.tqniait.com', 'incognito.warezservers.com', 'hostingmango.com', 'licensehosts.com','license.promohosts.com', 'PhLicenseCP'
     );
     foreach $lookfor (@lookfor) {
         chomp($lookfor);
@@ -1321,7 +1322,7 @@ sub chk_etc_ips {
     if ($mainIPInIPS) {
         push( @WARNINGS, "$external_ip_address found in /etc/ips file. You should not add the licensed IP as an alias!" );
     }
-    my $ourIPinetcips = qx[ grep '208.74.' /etc/ips ];
+    my $ourIPinetcips = qx[ grep '^208.74.' /etc/ips ];
     return unless ($ourIPinetcips);
     $sendtomsg = CYAN "Please send to L3";
     $L3        = 1;
@@ -1568,14 +1569,14 @@ sub check_other_ports {
         }
     );
     my $timeout = 5;
-    my $host    = 'auth.cpanel.net';
-    chomp($host);
-    my $host_hr = check_ports( $host, $timeout, \%port_hash );
+    my $authhost    = 'auth.cpanel.net';
+    chomp($authhost);
+    my $host_hr = check_ports( $authhost, $timeout, \%port_hash );
     for my $port ( sort { $a <=> $b } keys %{ $host_hr->{tcp} } ) {
         my $yesno = $host_hr->{tcp}{$port}{open} ? GREEN "OK" : RED "Failed!";
         chomp($yesno);
         if ( $yesno =~ m/Failed!/ ) {
-			if ($port eq "2089") { $trCheck = 0; }
+            if ($port eq "2089") { $trCheck = 0; }
             push(
                 @WARNINGS,
                 "Could not reach port $port on auth.cpanel.net from this server -- connections may be throttled."
@@ -1763,12 +1764,12 @@ sub Usage {
 }
 
 sub read_last_50_lines_of_license_log {
+    return unless( -e LICENSE_LOG );
     print_working("Displaying last 50 lines of /usr/local/cpanel/logs/license_log:");
     my $lineswanted = 50;
-    my $filename    = "/usr/local/cpanel/logs/license_log";
     my ( $line, $filesize, $seekpos, $numread, @lines );
-    open F, $filename or die "Can't read $filename: $!\n";
-    $filesize = -s $filename;
+    open F, LICENSE_LOG or die "Can't read license_log: $!\n";
+    $filesize = -s LICENSE_LOG;
     $seekpos  = 50 * $lineswanted;
     $numread  = 0;
 
@@ -1783,7 +1784,7 @@ sub read_last_50_lines_of_license_log {
         }
         if ( $numread < $lineswanted ) {
             if ( $seekpos >= $filesize ) {
-                die "There aren't even $lineswanted lines in $filename - I got $numread\n";
+                die "There aren't even $lineswanted lines in license_log - I got $numread\n";
             }
             $seekpos *= 2;
             $seekpos = $filesize if $seekpos >= $filesize;
@@ -1796,51 +1797,31 @@ sub read_last_50_lines_of_license_log {
 sub get_date { 
     return if ($skipdate);
     print_working("Checking Date/Time:") unless ( !$verbose );
-	my $servertime = Time::Piece->new;
-	my $servertimeepoch = $servertime->epoch;
+    my $servertime = Time::Piece->new;
+    my $servertimeepoch = $servertime->epoch;
     print BOLD GREEN ON_BLACK "\t \\_ Server Time: " . $servertime . " (" . $servertimeepoch . ")\n";
     my ($utctime) = ( split( /\./, qx[ /usr/bin/curl -s https://cpaneltech.ninja/cgi-bin/date.pl ]));
     if ( $utctime eq "" ) {
         ($utctime) = ( split( /\./, qx[ /usr/bin/curl -sk https://cpaneltech.ninja/cgi-bin/date.pl ]));
     }
-	my $strutctime = scalar localtime($utctime);
+    my $strutctime = scalar localtime($utctime);
     print BOLD GREEN ON_BLACK "\t \\_ Outside Location: " . $strutctime . " (" . $utctime . ")\n" unless ( !$verbose );
-	my $timediff = $strutctime - $servertime;
-	my $timewarn = "\n";
-	if ($timediff < -5 or $timediff > 5) {
-    	$timewarn = " [ You should correct this to prevent licensing issues. ]\n";
-    	my $prettytimediff = $timediff->pretty;
+    my $timediff = $strutctime - $servertime;
+    my $timewarn = "\n";
+    if ($timediff < -5 or $timediff > 5) {
+        $timewarn = " [ You should correct this to prevent licensing issues. ]\n";
+        my $prettytimediff = $timediff->pretty;
         print_warn("\t \\_ [WARN] - Date/Time is off by $prettytimediff $timewarn") unless ( !$verbose );
         push( @WARNINGS, "Date/Time is off by $prettytimediff $timewarn" );
-	}
-	else {
-		print_OK("\t \\_ [OK] - Date/Time is within 5 seconds!\n") unless ( !$verbose );
-	}
+    }
+    else {
+        print_OK("\t \\_ [OK] - Date/Time is within 5 seconds!\n") unless ( !$verbose );
+    }
 }
 
 sub check_for_solo {
-    my $isSolo = CYAN "No";
-    if ( $isSoloNum == 1 ) {
-        $isSolo = CYAN "Yes";
-    }
-    print_working("Is this a SOLO license: $isSolo");
-    my $userowners = Cpanel::Config::LoadUserOwners::loadtrueuserowners( undef, 1, 1 );
-    my $TotalAccts = %{$userowners};
-    if ( $TotalAccts > 1 and $isSoloNum == 1 ) {
-        my $CSA = CSA();
-        if ($CSA) {
-            if ($L3) {
-                $sendtomsg = CYAN "Please send to L3";
-            }
-            else {
-                $sendtomsg = CYAN "Please send to Customer Service";
-            }
-		}
-        push(
-            @WARNINGS,
-            "SOLO license with more than 1 account - " . $sendtomsg
-        ) unless ( !iam('cptech') );
-    }
+    my $isSolo = ($tlSolo) ? "Yes" : "No";
+    print_working("Is this a SOLO license: " . CYAN $isSolo);
 }
 
 sub check_for_GCE {
