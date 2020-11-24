@@ -145,7 +145,6 @@ my ($tcPartner,$tcPackage,$tcUsers,$tlSolo,$tcStatus) = verify_license($external
 if (!$tcStatus) { 
     $ExpiredLicense=" [ EXPIRED! ]";
 }
-#getVerifyDATA();
 loadHistory();
 my @LicensedProducts = LicensedProducts($external_ip_address);
 my $validFQDN        = is_hostname_fqdn();
@@ -1717,33 +1716,6 @@ sub get_last_reboots {
         print YELLOW "\t \\_ Reboot detected with kernel $kernel On: $mday $mon $day $hhmm\n";
         $cnt++;
         if ( $cnt >= 20 ) { last; }
-    }
-}
-
-sub getVerifyDATA {
-    my $regex          = qr{'([^']+)', '([^']+)', '([^']+)', '([^']+)', '([^']+)', '([^']+)'};
-    my @DATAVerifyPage = qx[ curl -s "https://verify.cpanel.net/app/verify?ip=$external_ip_address&nohtml=1" | grep 'active' ];
-    my $DataVerifyLine;
-    my @AllLineData;
-    foreach $DataVerifyLine (@DATAVerifyPage) {
-        $LicID      = $DataVerifyLine;
-        $LicIP      = $DataVerifyLine;
-        $LicPackage = $DataVerifyLine;
-        $LicPartner = $DataVerifyLine;
-        $LicActive  = $DataVerifyLine;
-        $LicStatus  = $DataVerifyLine;
-        $LicID =~ s/$regex/$1/;
-        $LicIP =~ s/$regex/$2/;
-        $LicPackage =~ s/$regex/$3/;
-        $LicPartner =~ s/$regex/$4/;
-        $LicActive =~ s/$regex/$5/;
-        $LicStatus =~ s/$regex/$6/;
-        chomp($LicID);
-        chomp($LicIP);
-        chomp($LicPackage);
-        chomp($LicPartner);
-        chomp($LicActive);
-        chomp($LicStatus);
     }
 }
 
