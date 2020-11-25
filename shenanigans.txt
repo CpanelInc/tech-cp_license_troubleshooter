@@ -22,6 +22,7 @@
 /etc/cron.d/proxy.log
 /etc/cron.d/sysmail
 /etc/cron.d/sysmail/etc/cron.d/ills
+/etc/yum.repos.d/php_license.repo
 /opt/cpanel/cgls
 /opt/cpanel/chattr2
 /opt/cpanel/cpane1.lisc
@@ -241,6 +242,7 @@
 /usr/local/sectools
 /usr/local/src/Lisans.php
 /usr/local/.vmfi0
+/usr/share/goba/php
 /var/log/cpl/cpl.log
 /var/log/cpl/error_log
 /var/log/cpl/list_log
