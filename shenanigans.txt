@@ -96,6 +96,7 @@
 /usr/bin/CSPcPanel
 /usr/bin/cspcrons
 /usr/bin/cspdaemon
+/usr/bin/cspfwd
 /usr/bin/CSPPerlUpdator
 /usr/bin/CSPUpdate
 /usr/bin/GbCpanel

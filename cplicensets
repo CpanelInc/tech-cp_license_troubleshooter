@@ -33,7 +33,7 @@
 # AUTHOR: Peter Elsner <peter.elsner@cpanel.net>
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
-my $version = "2.0.25";
+my $version = "2.0.26";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $LicID;
@@ -341,15 +341,15 @@ sub verify_license {
         $package =~ s/\'$//;
         $partner =~ s/\'$//;
         $status =~ s/\'$//;
-        if ($package =~ m/emergency|development|migration|test|CPANEL-SERVERS-INTERNAL/i && $status =~ m/active/ ) {
+        if ($package =~ m/emergency|development|migration|test|CPANEL-SERVERS-INTERNAL|CPANEL-EMPLOYMENT-BENEFIT$/i && $status =~ m/active/ ) {
             $isActive=1;
         }
         if ($package =~ m/solo/i) { $AllowedCnt = 1; $isSolo=1}
-        if ($package =~ m/Admin/) { $AllowedCnt = 5;}
-        if ($package =~ m/Pro/) { $AllowedCnt = 30;}
-        if ($package =~ m/Plus/) { $AllowedCnt = 50;}
-        if ($package =~ m/Premier/) { $AllowedCnt = 100;}
-        if ($package =~ m/Premier/ and $package =~ m/(\d+)/) { $AllowedCnt = $1;}
+        if ($package =~ m/Admin/i) { $AllowedCnt = 5;}
+        if ($package =~ m/Pro/i) { $AllowedCnt = 30;}
+        if ($package =~ m/Plus/i) { $AllowedCnt = 50;}
+        if ($package =~ m/Premier/i) { $AllowedCnt = 100;}
+        if ($package =~ m/Premier/i and $package =~ m/(\d+)/) { $AllowedCnt = $1;}
         if ($package =~ m/Autoscale/) { $AllowedCnt = "Unlimited"; }
         if ($AllowedCnt or $isActive) { 
             $LicStatus = ($isExpired) ? 0:1;
