@@ -45,8 +45,8 @@ our $LicPackage;
 our $LicPartner;
 our $LicActive;
 our $LicStatus;
-our $trCheck = 1;
-our $AllowedCnt;
+our $trCheck    = 1;
+our $AllowedCnt = 0;
 use Readonly;
 Readonly my $LICENSE_LOG => '/usr/local/cpanel/logs/license_log';
 
@@ -177,13 +177,16 @@ my $ActiveProfileNode = "UNKNOWN";
 if ( -e "/usr/local/cpanel/cpanel.lisc" ) {
     $ActiveProfileNode = getProfileNode();
 }
-my $totAllowedMsg = $AllowedCnt;
-if ( $AllowedCnt eq "" ) { $totAllowedMsg = "Unknown"; }
-if ( $AllowedCnt == 0 )  { $totAllowedMsg = "Unlimited"; }
+
+#my $totAllowedMsg = $AllowedCnt;
+my $totAllowedMsg = "Unknown";
+
+#if ( $AllowedCnt eq "" ) { $totAllowedMsg = "Unknown"; }
+if ( $AllowedCnt == 0 ) { $totAllowedMsg = "Unlimited"; }
 print_working( "Allowed Users: " . CYAN $totAllowedMsg );
 check_for_solo();
 if ( $UserCnt > $AllowedCnt ) {
-    print_warn("\t \\_ User Count Exceeded - Please contact Customer Service!") unless ( $AllowedCnt eq "Unlimited" or $AllowedCnt eq "" );
+    print_warn("\t \\_ User Count Exceeded - Please contact Customer Service!") unless ( $totAllowedMsg eq "Unlimited" || $AllowedCnt == 0 );
 }
 print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
 check_for_GCE();
@@ -321,7 +324,8 @@ sub print_OK {
 }
 
 sub system_formatted {
-    open( my $cmd, "-|", "$_[0]" );
+    my $command = shift;
+    open( my $cmd, "-|", "$command" );
     while (<$cmd>) {
         print_formatted("$_");
     }
@@ -329,11 +333,9 @@ sub system_formatted {
 }
 
 sub print_formatted {
-    my @input = shift;
-    @input = split /\n/, @input;
-
-    #my @input = split /\n/, $_[0];
-    foreach (@input) { print CYAN "    $_\n"; }
+    my @input2 = shift;
+    my @input  = split /\n/, @input2;
+    foreach (@input2) { print CYAN "    $_"; }
 }
 
 sub verify_license {
@@ -796,6 +798,7 @@ sub get_network_hostname {
     return if ( !( -e ("/etc/sysconfig/network") ) );
     my $networkhost = qx[ grep '^HOSTNAME=' /etc/sysconfig/network ];
     chomp($networkhost);
+    return unless ($networkhost);
     if ($networkhost) {
         print_working("Obtaining the HOSTNAME setting from /etc/sysconfig/network: Present - Contents are:") unless ( !$verbose );
         print BOLD GREEN "\t\\_ " . $networkhost . "\n" unless ( !$verbose );
@@ -1277,8 +1280,9 @@ sub getHist {
     );
     foreach my $lookfor (@lookfor) {
         chomp($lookfor);
-        my $match = first { /$lookfor/ } @HISTORY;
+        my $match = grep { /$lookfor/ } @HISTORY;
         chomp($match);
+        next unless ($match);
         if ($match) {
             $sendtomsg = CYAN "Please send to L3";
             $L3        = 1;
