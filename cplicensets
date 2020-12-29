@@ -1275,7 +1275,7 @@ sub chk_fwdip {
 sub getHist {
     my @lookfor = (
         'lic.bigconfig.com', 'cpsanitycheck.so', 'sectools', '3jenan', 'secinstall', 'update_cpanelv2', 'license.onlinelic.net', '\./s.sh', 'tsocks', 'yoncu.com', 'cpanel.resellercenter.ir', 'add blackhole 208\.74\.', 'Lisans -Zorla', 'Lisans -Guncelle', 'Lisans -Kaldır', 'Lisans -Pasif', 'Lisans -Aktif', 'Lisans -5min', 'sistem/Kurulum', 'buylicense.software', 'cyberlic', 'asanlicense.ir',
-        'lisanstr.com', 'license.licensemaker.com', 'up.ehabdiab.com', 'license.tqniait.com', 'incognito.warezservers.com', 'hostingmango.com', 'licensehosts.com', 'license.promohosts.com', 'PhLicenseCP'
+        'lisanstr.com', 'license.licensemaker.com', 'up.ehabdiab.com', 'license.tqniait.com', 'incognito.warezservers.com', 'hostingmango.com', 'licensehosts.com', 'license.promohosts.com', 'PhLicenseCP', 'cheapcpanel.net'
     );
     foreach my $lookfor (@lookfor) {
         chomp($lookfor);

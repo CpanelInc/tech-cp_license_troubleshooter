@@ -127,6 +127,7 @@
 /usr/bin/licsys
 /usr/bin/proxychains4
 /usr/bin/proxy.log
+/usr/bin/rccpdownloader
 /usr/bin/RcCpanel
 /usr/bin/RcCpanelLetsEncrypt
 /usr/bin/RcCpanelUpdate
