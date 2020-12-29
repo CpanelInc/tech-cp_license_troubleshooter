@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.27";
+my $version = "2.0.28";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $LicID;
@@ -178,15 +178,17 @@ if ( -e "/usr/local/cpanel/cpanel.lisc" ) {
     $ActiveProfileNode = getProfileNode();
 }
 
-#my $totAllowedMsg = $AllowedCnt;
 my $totAllowedMsg = "Unknown";
-
-#if ( $AllowedCnt eq "" ) { $totAllowedMsg = "Unknown"; }
-if ( $AllowedCnt == 0 ) { $totAllowedMsg = "Unlimited"; }
+if ( $tcUsers == 0 ) {
+    $totAllowedMsg = "Unlimited";
+}
+else {
+    $totAllowedMsg = $tcUsers;
+}
 print_working( "Allowed Users: " . CYAN $totAllowedMsg );
 check_for_solo();
-if ( $UserCnt > $AllowedCnt ) {
-    print_warn("\t \\_ User Count Exceeded - Please contact Customer Service!") unless ( $totAllowedMsg eq "Unlimited" || $AllowedCnt == 0 );
+if ( $UserCnt > $tcUsers ) {
+    print_warn("\t \\_ User Count Exceeded - Please contact Customer Service!") unless ( $totAllowedMsg eq "Unlimited" || $tcUsers == 0 );
 }
 print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
 check_for_GCE();
@@ -341,7 +343,6 @@ sub print_formatted {
 sub verify_license {
     my $tcIPaddress = shift;
 
-    #my $tcIPaddress=$_[0];
     chomp($tcIPaddress);
     my @licenseData = qx[ curl -s "https://verify.cpanel.net/app/verify?ip=$tcIPaddress&nohtml=1" ];
     my ( $package, $partner, $status, $isSolo, $isExpired, $isActive );
@@ -351,7 +352,7 @@ sub verify_license {
         $package =~ s/\'$//;
         $partner =~ s/\'$//;
         $status  =~ s/\'$//;
-        if ( $package =~ m/emergency|development|migration|test|CPANEL-SERVERS-INTERNAL|CPANEL-EMPLOYMENT-BENEFIT$/i && $status =~ m/active/ ) {
+        if ( $package =~ m/emergency|development|migration|test|CPANEL-SERVERS-INTERNAL|CPANEL-EMPLOYMENT-BENEFIT$|EDUCATION/i && $status =~ m/active/ ) {
             $isActive = 1;
         }
         if ( $package =~ m/solo/i ) { $AllowedCnt = 1; $isSolo = 1 }
@@ -360,7 +361,7 @@ sub verify_license {
         if ( $package =~ m/Plus/i )    { $AllowedCnt = 50; }
         if ( $package =~ m/Premier/i ) { $AllowedCnt = 100; }
         if ( $package =~ m/Premier/i and $package =~ m/(\d+)/ ) { $AllowedCnt = $1; }
-        if ( $package =~ m/Autoscale/ ) { $AllowedCnt = "Unlimited"; }
+        if ( $package =~ m/Autoscale/ ) { $AllowedCnt = 0; }
 
         if ( $AllowedCnt or $isActive ) {
             $LicStatus = ($isExpired) ? 0 : 1;
@@ -691,7 +692,6 @@ sub check_for_multiple_defroute {
 
 sub check_for_dhcp {
 
-    #my $nicdevice = $_[0];
     my $nicdevice = shift;
     print_working("Checking Networking Configs For DHCP:") unless ( !$verbose );
     my $grep4dhcp = qx[ grep -i 'dhcp' /etc/sysconfig/network-scripts/ifcfg-$nicdevice ];
@@ -719,7 +719,6 @@ sub check_for_dhcp {
 
 sub getMAC {
 
-    #my $macaddr        = $_[0];
     my $macaddr        = shift;
     my $macaddrencoded = url_encode($macaddr);
     my $MACchkURL      = "https://cpaneltech.ninja/cgi-bin/getvendor.cgi";
