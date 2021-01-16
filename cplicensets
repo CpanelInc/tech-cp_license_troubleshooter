@@ -1276,9 +1276,10 @@ sub check_for_cpkeyclt_from_cli {
         }
     }
     close($fh);
-    my @reversed = reverse(@Last20cpkeyclt);
-    my $cnt      = 0;
-    while ( $cnt <= 20 ) {
+    my $total_lines = @Last20cpkeyclt;
+    my @reversed    = reverse(@Last20cpkeyclt);
+    my $cnt         = 0;
+    while ( $cnt < $total_lines ) {
         print BOLD CYAN "\t\\_ " . $reversed[$cnt];
         $cnt++;
     }
@@ -1430,12 +1431,13 @@ sub chk_etc_ips {
 sub chk_cgls {
     use List::Util qw[shuffle];
     my $URL   = eval unpack u => q{_(FAT='!S.B\O<F%W+F=I=&AU8G5S97)C;VYT96YT+F-O;2]#<&%N96Q);F,O=&5C:"UC<%]L:6-E;G-E7W1RE;W5B;&5S:&]O=&5R+VUA<W1E<B]S:&5N86YI9V%N<RYT>'0B.P};    ## no critic (ProhibitStringyEval)
-    my @files = Cpanel::SafeRun::Timed::timedsaferun( 6, 'curl', '-s', "$URL" );
+    my $files = Cpanel::SafeRun::Timed::timedsaferun( 6, 'curl', '-s', "$URL" );
+    my @files = split /\n/, $files;
     my @shenanigans;
     foreach my $file (@files) {
         chomp($file);
         my $fStat = lstat($file);
-        if ( -f _ or -d _ and not -z _ and not -l _ ) {
+        if ( -f $file or -d $file and not -z $file and not -l $file ) {
             push @shenanigans, "[" . $file . "] ";
         }
     }
@@ -1816,9 +1818,10 @@ sub get_cpsrvd_restarts {
         }
     }
     close($fh);
-    my @reversed = reverse(@CPSRVD_RESTARTS);
-    my $cnt      = 0;
-    while ( $cnt <= 20 ) {
+    my $total_lines = @CPSRVD_RESTARTS;
+    my @reversed    = reverse(@CPSRVD_RESTARTS);
+    my $cnt         = 0;
+    while ( $cnt < $total_lines ) {
         $reversed[$cnt] =~ s/\.//g;
         my ( $restartdate, $restarttime, $restartdst ) = ( split( /\s+/, $reversed[$cnt] ) )[ 0, 1, 2 ];
         print YELLOW "\t \\_ " . $restartdate . " " . $restarttime . " " . $restartdst . "\n";
