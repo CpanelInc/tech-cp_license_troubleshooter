@@ -1276,7 +1276,7 @@ sub check_for_cpkeyclt_from_cli {
         }
     }
     close($fh);
-    my $total_lines = @Last20cpkeyclt;
+    my $total_lines = ( scalar @Last20cpkeyclt > 20 ) ? 20 : @Last20cpkeyclt;
     my @reversed    = reverse(@Last20cpkeyclt);
     my $cnt         = 0;
     while ( $cnt < $total_lines ) {
@@ -1818,7 +1818,7 @@ sub get_cpsrvd_restarts {
         }
     }
     close($fh);
-    my $total_lines = @CPSRVD_RESTARTS;
+    my $total_lines = ( scalar @CPSRVD_RESTARTS > 20 ) ? 20 : @CPSRVD_RESTARTS;
     my @reversed    = reverse(@CPSRVD_RESTARTS);
     my $cnt         = 0;
     while ( $cnt < $total_lines ) {
