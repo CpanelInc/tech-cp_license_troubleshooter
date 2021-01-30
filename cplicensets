@@ -954,47 +954,38 @@ sub check_resolvconf {
 
 sub check_for_cloudcfg {
     return if ( !( -d ("/etc/cloud/") ) );
-    if ( -e ("/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg") ) {
-        if ($verbose) {
-            print_working( "/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg " . GREEN "is present" );
-        }
-    }
-    my @etc_cloud_configs = glob(q{ /etc/cloud/cloud.cfg.d/*.cfg });
-    push @etc_cloud_configs, "/etc/cloud/cloud.cfg";
+    print_working("Checking cfg files within /etc/cloud/ for specific settings...") unless ( !$verbose );
     my $preserve_hostname = 0;
-    my $manageetchosts    = 0;
+    my $manage_etc_hosts  = 0;
+    my @etc_cloud_configs = glob(q{ /etc/cloud/cloud.cfg.d/*.cfg });
+    if ( -e '/etc/cloud/cloud.cfg' ) { push @etc_cloud_configs, "/etc/cloud/cloud.cfg"; }
     foreach my $etc_cloud_config (@etc_cloud_configs) {
+        last if ( $preserve_hostname || $manage_etc_hosts );
         chomp($etc_cloud_config);
         open( my $fh, '<', "$etc_cloud_config" );
         while (<$fh>) {
-            if ( $_ =~ m/preserve_hostname/ ) {
+            if ( $_ =~ m/preserve_hostname: true/ ) {
                 $preserve_hostname = 1;
             }
-            if ( $_ =~ m/manage_etc_hosts/ ) {
-                $manageetchosts = 1;
+            if ( $_ =~ m/manage_etc_hosts: false/ ) {
+                $manage_etc_hosts = 1;
             }
         }
         close($fh);
     }
     if ($preserve_hostname) {
-        print BOLD GREEN "\t\\_ preserve_hostname is set to true in $preserve_hostname"
-          unless ( !$verbose );
+        print BOLD GREEN "\t\\_ preserve_hostname is set to true within a cfg file in /etc/cloud/*\n" unless ( !$verbose );
     }
     else {
-        push(
-            @WARNINGS,
-            "preserve_hostname not set within any file in /etc/cloud/cloud.cfg.d/"
-        );
+        print RED "\t\\_ preserve_hostname is NOT set to true within any cfg file in /etc/cloud/*\n" unless ( !$verbose );
+        push( @WARNINGS, "preserve_hostname not set within any file in /etc/cloud/cloud.cfg.d/" );
     }
-    if ($manageetchosts) {
-        print BOLD GREEN "\t\\_ manage_etc_hosts is set to false in $manageetchosts"
-          unless ( !$verbose );
+    if ($manage_etc_hosts) {
+        print BOLD GREEN "\t\\_ manage_etc_hosts is set to false within a cfg file in /etc/cloud/*\n" unless ( !$verbose );
     }
     else {
-        push(
-            @WARNINGS,
-            "manage_etc_hosts not set within any file in /etc/cloud/cloud.cfg.d/"
-        );
+        print RED "\t\\_ manage_etc_hosts is NOT set to false within any cfg file in /etc/cloud/*\n" unless ( !$verbose );
+        push( @WARNINGS, "manage_etc_hosts not set within any file in /etc/cloud/cloud.cfg.d/" );
     }
 }
 
