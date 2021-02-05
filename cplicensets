@@ -61,7 +61,7 @@ use Cpanel::Config::LoadUserDomains ();
 use Cpanel::SafeRun::Timed          ();
 use Cpanel::JSON                    ();
 use JSON::MaybeXS qw(encode_json decode_json);
-use Cpanel::Verify                  ();
+use Cpanel::Verify ();
 use NetAddr::IP;
 use Text::CSV;
 use Cpanel::OSSys::Env;
@@ -106,7 +106,7 @@ our $cgls       = 0;
 our $timenow    = time();
 our $isGCE_IP;
 our $isAWS_IP;
-our $sendtomsg    = "";
+our $sendtomsg = "";
 
 get_external_ip();
 
@@ -1930,11 +1930,11 @@ sub check_for_development {
     my $isDevelmsg = ( $package =~ m/development/i ) ? "Yes" : "No";
     print_working( "Is this a DEVELOPMENT license: " . CYAN $isDevelmsg );
 }
+
 sub check_for_onetime {
     my $isOneTimemsg = ( $package =~ m/one-time/i ) ? "Yes" : "No";
     print_working( "Is this a ONE-TIME license: " . CYAN $isOneTimemsg );
 }
-
 
 sub check_for_GCE {
     $isGCE_IP = getGCE_IPs($external_ip_address);
@@ -2100,7 +2100,7 @@ sub chk_cgls3 {
 }
 
 sub check_for_license_status_json {
-    return if ! -e "/var/cpanel/license.status.json";
+    return if !-e "/var/cpanel/license.status.json";
     my $licstatus;
     if ( open my $file_fh, '<', "/var/cpanel/license.status.json" ) {
         while (<$file_fh>) {
@@ -2108,13 +2108,14 @@ sub check_for_license_status_json {
         }
         close($file_fh);
     }
+
     #return unless( defined $licstatus->{code} && $licstatus->{code} != 200 );
-    return unless( defined $licstatus->{code} );
+    return unless ( defined $licstatus->{code} );
     if ( $licstatus->{code} == 200 ) {
-        print_working('Last cpkeyclt check: ' . BOLD GREEN "(" . $licstatus->{code} . ") " . $licstatus->{message} );
+        print_working( 'Last cpkeyclt check: ' . BOLD GREEN "(" . $licstatus->{code} . ") " . $licstatus->{message} );
     }
     else {
-        print_working('Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
+        print_working( 'Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
         push( @WARNINGS, "Last cpkeyclt check: (" . $licstatus->{code} . ") " . $licstatus->{message} );
     }
     return;
