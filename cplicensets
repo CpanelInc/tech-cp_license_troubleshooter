@@ -60,6 +60,7 @@ use Cpanel::Config::LoadUserOwners  ();
 use Cpanel::Config::LoadUserDomains ();
 use Cpanel::SafeRun::Timed          ();
 use Cpanel::JSON                    ();
+use JSON::MaybeXS qw(encode_json decode_json);
 use Cpanel::Verify                  ();
 use NetAddr::IP;
 use Text::CSV;
@@ -105,9 +106,6 @@ our $cgls       = 0;
 our $timenow    = time();
 our $isGCE_IP;
 our $isAWS_IP;
-our $isSoloNum    = 0;
-our $isDevelLic   = 0;
-our $isOneTimeLic = 0;
 our $sendtomsg    = "";
 
 get_external_ip();
@@ -189,7 +187,10 @@ else {
     $totAllowedMsg = $AllowedCnt;
 }
 print_working( "Allowed Users: " . CYAN $totAllowedMsg );
+check_for_license_status_json();
 check_for_solo();
+check_for_development();
+check_for_onetime();
 if ( $UserCnt > $AllowedCnt ) {
     print_warn("\t \\_ User Count Exceeded - Please contact Customer Service!") unless ( $totAllowedMsg eq "Unlimited" || $AllowedCnt == 0 );
 }
@@ -197,12 +198,6 @@ print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
 check_for_GCE();
 check_for_AWS();
 chk_for_cloud_ready();
-if ($isDevelLic) {
-    print BOLD YELLOW "[INFO] - This is a development license.\n";
-}
-if ($isOneTimeLic) {
-    print BOLD YELLOW "[INFO] - This is a One-Time license.\n";
-}
 print_working( "Hostname is FQDN: " . $validFQDN . CYAN " [$HOSTNAME]" );
 check_for_accountinglog();
 get_envtype();
@@ -1931,6 +1926,16 @@ sub check_for_solo {
     print_working( "Is this a SOLO license: " . CYAN $isSolomsg);
 }
 
+sub check_for_development {
+    my $isDevelmsg = ( $package =~ m/development/i ) ? "Yes" : "No";
+    print_working( "Is this a DEVELOPMENT license: " . CYAN $isDevelmsg );
+}
+sub check_for_onetime {
+    my $isOneTimemsg = ( $package =~ m/one-time/i ) ? "Yes" : "No";
+    print_working( "Is this a ONE-TIME license: " . CYAN $isOneTimemsg );
+}
+
+
 sub check_for_GCE {
     $isGCE_IP = getGCE_IPs($external_ip_address);
     my $isGCE = ($isGCE_IP) ? "Yes" : "No";
@@ -2092,5 +2097,26 @@ sub chk_cgls3 {
         push( @WARNINGS, "\t/usr/local/cpanel/cpkeyclt is set to [IMMUTABLE/APPEND-ONLY]" ) unless ( $L3 == 1 || !iam('cptech') );
         $L3 = 1;
     }
+}
+
+sub check_for_license_status_json {
+    return if ! -e "/var/cpanel/license.status.json";
+    my $licstatus;
+    if ( open my $file_fh, '<', "/var/cpanel/license.status.json" ) {
+        while (<$file_fh>) {
+            $licstatus = decode_json $_;
+        }
+        close($file_fh);
+    }
+    #return unless( defined $licstatus->{code} && $licstatus->{code} != 200 );
+    return unless( defined $licstatus->{code} );
+    if ( $licstatus->{code} == 200 ) {
+        print_working('Last cpkeyclt check: ' . BOLD GREEN "(" . $licstatus->{code} . ") " . $licstatus->{message} );
+    }
+    else {
+        print_working('Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
+        push( @WARNINGS, "Last cpkeyclt check: (" . $licstatus->{code} . ") " . $licstatus->{message} );
+    }
+    return;
 }
 
