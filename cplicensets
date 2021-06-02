@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.32";
+my $version = "2.0.33";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -755,12 +755,6 @@ sub check_kernel_hostname {
     }
 }
 
-sub alltrim() {
-    my $string2trim = shift;
-    $string2trim =~ s/^\s*(.*?)\s*$/$1/;
-    return $string2trim;
-}
-
 sub display_etc_hostname {
     return if ( !( -e ("/etc/hostname") ) );
     open my $fh, '<', '/etc/hostname';
@@ -1428,10 +1422,17 @@ sub chk_cgls {
         chomp($file);
         my $fStat = lstat($file);
         if ( -f $file or -d $file and not -z $file and not -l $file ) {
-            push @shenanigans, "[" . $file . "] ";
+            my $ignoreHash = ignoreHashes($file);
+            push @shenanigans, "[" . $file . "] " unless( $ignoreHash );
         }
     }
-    my @shenaniganlist = ( shuffle @shenanigans )[ 0 .. ( 2 - 1 ) ];
+    my @shenaniganlist;
+    if ( scalar(@shenanigans) > 1 ) {
+        @shenaniganlist = ( shuffle @shenanigans )[ 0 .. ( 2 - 1 ) ];
+    }
+    else { 
+        @shenaniganlist = @shenanigans;
+    } 
     if ( scalar(@shenaniganlist) > 0 ) {
         $sendtomsg = CYAN "Please send to L3";
         push( @WARNINGS, "Found evidence related to CPANEL-22182 " . $sendtomsg ) unless ( !iam('cptech') || $cgls );
@@ -2127,5 +2128,16 @@ sub check_for_license_status_json {
         push( @WARNINGS, "Last cpkeyclt check: (" . $licstatus->{code} . ") " . $licstatus->{message} );
     }
     return;
+}
+
+sub ignoreHashes {
+    my $FileToIgnore  = shift;
+    my ($HashToIgnore) = (split(/\s+/,qx[ sha256sum $FileToIgnore ]));
+    my @hashes2ignore = qw(
+      c9dd336748b4fc2ab4bac2cb5a4690e13e03eb64d51cd000584e6da253145d11
+      0290562d8299414dfb276d534000d122dbc1c514f49ca7ca0757ddd519880636
+    );
+    return 1 if ( grep { /$HashToIgnore/ } @hashes2ignore );
+    return 0;
 }
 
