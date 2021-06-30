@@ -1008,24 +1008,25 @@ sub check_for_dhclient_exit_hook {
     }
     if ($zzzsethostname) {
         print BOLD GREEN "\t\\_ zzz-set-hostname.sh file is present\n" unless ( !$verbose );
-    }
-    else {
-        print RED "\t\\_ zzz-set-hostname.sh file is not present\n" unless ( !$verbose );
         if ( $dheh_hostname ne $HOSTNAME ) {
             print RED "\t\\_ $HOSTNAME is not set within the zzz-set-hostname.sh file\n"                                 unless ( !$verbose );
             push( @WARNINGS, "The /etc/dhcp/dhclient-exit-hooks.d/zzz-set-hostname.sh file does not contain $HOSTNAME" ) unless ($sethostname);
         }
     }
+    else {
+        print RED "\t\\_ zzz-set-hostname.sh file is not present\n" unless ( !$verbose );
+    }
     if ($sethostname) {
         print BOLD GREEN "\t\\_ set-hostname.sh file is present\n" unless ( !$verbose );
-    }
-    else {
-        print RED "\t\\_ set-hostname.sh file is not present\n" unless ( !$verbose );
         if ( $dheh_hostname ne $HOSTNAME ) {
             print RED "\t\\_ $HOSTNAME is not set within the set-hostname.sh file\n"                                 unless ( !$verbose );
             push( @WARNINGS, "The /etc/dhcp/dhclient-exit-hooks.d/set-hostname.sh file does not contain $HOSTNAME" ) unless ($zzzsethostname);
         }
     }
+    else {
+        print RED "\t\\_ set-hostname.sh file is not present\n" unless ( !$verbose );
+    }
+
     if ($isGCE_IP) {
         push(
             @WARNINGS,
@@ -1424,11 +1425,8 @@ sub chk_cgls {
         my $fStat = lstat($file);
         if ( -f $file or -d $file and not -z $file and not -l $file ) {
             my $ignoreHash = ignoreHashes($file);
-<<<<<<< HEAD
             my $filetype   = Cpanel::SafeRun::Timed::timedsaferun( 5, 'file', "$file" );
             next if ( $filetype =~ m/data/ && $file eq "/home/installer" );
-=======
->>>>>>> TECH-1242
             push @shenanigans, "[" . $file . "] " unless ($ignoreHash);
         }
     }
