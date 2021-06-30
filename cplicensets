@@ -42,6 +42,7 @@ our $OPT_TIMEOUT;
 our $trCheck = 1;
 our $verify_license_raw;
 our $verify_license_data;
+our $L3 = 0;
 use Readonly;
 Readonly my $LICENSE_LOG => '/usr/local/cpanel/logs/license_log';
 
@@ -999,7 +1000,8 @@ sub check_for_dhclient_exit_hook {
             while (<$fh>) {
                 chomp($_);
                 if ( substr( $_, 0, 8 ) eq 'hostname' ) {
-                    $dheh_hostname = substr( $_, 8 );
+                    $dheh_hostname = substr( $_, 9 );
+                    chomp($dheh_hostname);
                     last;
                 }
             }
@@ -1097,7 +1099,6 @@ sub check_for_license_error {
     my @LICERR = <$fh>;
     close($fh);
     my $toomany = 0;
-    my $L3      = 0;
     foreach my $errline (@LICERR) {
         chomp($errline);
         print RED "\t\\_ $errline\n" unless ( !$verbose );
@@ -1106,9 +1107,10 @@ sub check_for_license_error {
             if ($CSA) {
                 if ($L3) {
                     $sendtomsg = CYAN "Please send to L3";
+                    $L3        = 1;
                 }
                 else {
-                    $sendtomsg = CYAN "Please send to Customer Service";
+                    $sendtomsg = CYAN "Please send to Customer Service" unless ($L3);
                 }
                 push(
                     @WARNINGS,
@@ -1117,10 +1119,11 @@ sub check_for_license_error {
             }
             else {
                 $sendtomsg = CYAN "Please send to L3";
+                $L3        = 1;
                 push(
                     @WARNINGS,
                     "This license has been activated too many times - " . $sendtomsg
-                ) unless ( !iam('cptech') );
+                ) unless ( !iam('cptech') || $L3 );
             }
             $toomany = 1;
         }
@@ -1295,7 +1298,6 @@ sub shenanigans {
 
 sub chk_fwdip {
     return if ( !( -e ("/var/cpanel/domainfwdip") ) );
-    my $L3 = 0;
     open( my $fh, '<', "/var/cpanel/domainfwdip" );
     my @FWDIP = <$fh>;
     close($fh);
@@ -1317,7 +1319,6 @@ sub getHist {
         'lic.bigconfig.com', 'cpsanitycheck.so', 'sectools', '3jenan', 'secinstall', 'update_cpanelv2', 'license.onlinelic.net', '\./s.sh', 'tsocks', 'yoncu.com', 'cpanel.resellercenter.ir', 'add blackhole 208\.74\.', 'Lisans -Zorla', 'Lisans -Guncelle', 'Lisans -Kaldır', 'Lisans -Pasif', 'Lisans -Aktif', 'Lisans -5min', 'sistem/Kurulum', 'buylicense.software', 'cyberlic', 'asanlicense.ir',
         'lisanstr.com',      'license.licensemaker.com', 'up.ehabdiab.com', 'license.tqniait.com', 'incognito.warezservers.com', 'hostingmango.com', 'licensehosts.com', 'license.promohosts.com', 'PhLicenseCP', 'cheapcpanel.net', 'remove_reseller.sh', 'licenseman.net', 'licensefarm.com', 'licenseportal.in', 'solicense.com'
     );
-    my $L3 = 0;
     foreach my $lookfor (@lookfor) {
         chomp($lookfor);
         my $match = grep { /$lookfor/ } @HISTORY;
@@ -1333,7 +1334,6 @@ sub getHist {
 
 sub chk_upcp_posthook {
     return unless ( -s "/usr/local/cpanel/scripts/postupcp" );
-    my $L3      = 0;
     my @lookfor = ( 'license.configserver.pro', 'cpsanitycheck.so', 'cpanel.lisc' );
     open my $fh, '<:encoding(UTF-8)', "/usr/local/cpanel/scripts/postupcp";
     while ( my $match = <$fh> ) {
@@ -1352,7 +1352,6 @@ sub chk_upcp_posthook {
 }
 
 sub chk_etc_hosts {
-    my $L3 = 0;
     open( my $fh, '<', "/etc/hosts" );
     my @HOSTS = <$fh>;
     close($fh);
@@ -1388,7 +1387,6 @@ sub chk_mounts {
     return unless (@liscMounted);
     foreach my $mount_line (@liscMounted) {
         if ( $mount_line =~ m/lisc/ ) {
-            my $L3 = 0;
             $sendtomsg = CYAN "Please send to L3";
             push( @WARNINGS, "cpanel.lisc possibly mounted - " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
             $L3 = 1;
@@ -1398,7 +1396,6 @@ sub chk_mounts {
 
 sub chk_etc_ips {
     return unless ( -s '/etc/ips' );
-    my $L3 = 0;
     open( my $fh, '<', '/etc/ips' );
     while (<$fh>) {
         chomp($_);
@@ -1439,16 +1436,16 @@ sub chk_cgls {
     }
     if ( scalar(@shenaniganlist) > 0 ) {
         $sendtomsg = CYAN "Please send to L3";
-        push( @WARNINGS, "Found evidence related to CPANEL-22182 " . $sendtomsg ) unless ( !iam('cptech') || $cgls );
+        $L3        = 1;
+        push( @WARNINGS, "Found evidence related to CPANEL-22182 " . $sendtomsg ) unless ( !iam('cptech') || $cgls || $L3 );
         $cgls = 1;
-        push( @WARNINGS, "\t " . WHITE @shenaniganlist ) unless ( !iam('cptech') );
+        push( @WARNINGS, "\t " . WHITE @shenaniganlist ) unless ( !iam('cptech') || $cgls || $L3 );
     }
 }
 
 sub chk_cgls2 {
     my $isASCII = Cpanel::SafeRun::Timed::timedsaferun( 5, 'file', '/usr/local/cpanel/cpkeyclt' );
     return unless ( $isASCII =~ m/ASCII/ );
-    my $L3 = 0;
     $sendtomsg = CYAN "Please send to L3";
     push( @WARNINGS, "Found evidence of CPANEL-22182 " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') || $cgls );
     $L3   = 1;
@@ -1461,7 +1458,6 @@ sub chk_rclocal {
     while (<$fh>) {
         chomp($_);
         if ( $_ =~ m/cpkeyclt/ ) {
-            my $L3 = 0;
             $sendtomsg = CYAN "Please send to L3";
             push( @WARNINGS, "Found evidence of CPANEL-22182 in /etc/rc.local " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
             $L3 = 1;
@@ -1742,7 +1738,6 @@ sub check_cpanel_lisc_file {
 
     #my $attr = `/usr/bin/lsattr $cPLiscFile`;
     my $attr = Cpanel::SafeRun::Timed::timedsaferun( 4, '/usr/bin/lsattr', "$cPLiscFile" );
-    my $L3   = 0;
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
         $sendtomsg = CYAN "Please send to L3";
         push( @WARNINGS, "$cPLiscFile is immutable - " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
@@ -1803,7 +1798,6 @@ sub display_route {
 
 sub get_cpsrvd_restarts {
     return if ( !$verbose );
-    my $L3 = 0;
     print_working("Displaying last 20 cpsrvd restarts:");
     my @CPSRVD_RESTARTS;
     open( my $fh, '<', '/usr/local/cpanel/logs/error_log' );
@@ -2017,15 +2011,14 @@ sub CSA {
         $QTIME = 18;
     }
     if ( $HOUR >= $STIME and $HOUR < $QTIME ) {
-        return 1;
+        return 1;    ## Customer Services is available (Business Hours)
     }
     else {
-        return 0;
+        return 0;    ## Customer Service is NOT available (after hours)
     }
 }
 
 sub proxy_chk {
-    my $L3        = 0;
     my @ports2chk = qw( 43467 13555 );
     my $is_listening;
     foreach my $port (@ports2chk) {
@@ -2102,7 +2095,6 @@ sub get_whmapi1 {    ## no critic (RequireArgUnpacking)
 }
 
 sub chk_cgls3 {
-    my $L3   = 0;
     my $attr = Cpanel::SafeRun::Timed::timedsaferun( 5, '/usr/bin/lsattr', '/usr/local/cpanel/cpkeyclt' );
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
         $sendtomsg = CYAN "Please send to L3";
