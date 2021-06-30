@@ -23,7 +23,6 @@
 /etc/cron.d/sysmail
 /etc/cron.d/sysmail/etc/cron.d/ills
 /etc/yum.repos.d/php_license.repo
-/home/installer
 /opt/cpanel/cgls
 /opt/cpanel/chattr2
 /opt/cpanel/cpane1.lisc

@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.33";
+my $version = "2.0.34";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -187,13 +187,13 @@ else {
     $totAllowedMsg = $AllowedCnt;
 }
 print_working( "Allowed Users: " . CYAN $totAllowedMsg );
+if ( $UserCnt > $AllowedCnt ) {
+    print_warn("\t \\_ User Count Exceeded - Please contact Customer Service!") unless ( $totAllowedMsg eq "Unlimited" || $AllowedCnt == 0 );
+}
 check_for_license_status_json();
 check_for_solo();
 check_for_development();
 check_for_onetime();
-if ( $UserCnt > $AllowedCnt ) {
-    print_warn("\t \\_ User Count Exceeded - Please contact Customer Service!") unless ( $totAllowedMsg eq "Unlimited" || $AllowedCnt == 0 );
-}
 print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
 check_for_GCE();
 check_for_AWS();
@@ -467,16 +467,17 @@ sub get_mainip {
         $mainip = $_;
     }
     close($fh);
+    chomp($mainip);
     if ($mainip) {
         print_OK( "\t\\_ " . $mainip . "\n" ) unless ( !$verbose );
         my $isOnServer = qx[ ip addr show | grep $mainip ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
         chomp($isOnServer);
         if ( !($isOnServer) ) {
             print RED " [WARN] /var/cpanel/mainip [$mainip] is not bound to this server.\n";
-            print YELLOW "\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck";
+            print YELLOW "\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck\n";
             push(
                 @WARNINGS,
-                "/var/cpanel/mainip [$mainip] not bound to this server.\n\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck"
+                "/var/cpanel/mainip [$mainip] not bound to this server.\n\t\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck"
             );
         }
     }
@@ -1423,8 +1424,11 @@ sub chk_cgls {
         my $fStat = lstat($file);
         if ( -f $file or -d $file and not -z $file and not -l $file ) {
             my $ignoreHash = ignoreHashes($file);
+<<<<<<< HEAD
             my $filetype   = Cpanel::SafeRun::Timed::timedsaferun( 5, 'file', "$file" );
             next if ( $filetype =~ m/data/ && $file eq "/home/installer" );
+=======
+>>>>>>> TECH-1242
             push @shenanigans, "[" . $file . "] " unless ($ignoreHash);
         }
     }
@@ -2120,7 +2124,6 @@ sub check_for_license_status_json {
         close($file_fh);
     }
 
-    #return unless( defined $licstatus->{code} && $licstatus->{code} != 200 );
     return unless ( defined $licstatus->{code} );
     if ( $licstatus->{code} == 200 ) {
         print_working( 'Last cpkeyclt check: ' . BOLD GREEN "(" . $licstatus->{code} . ") " . $licstatus->{message} );
