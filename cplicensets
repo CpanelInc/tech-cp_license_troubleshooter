@@ -187,13 +187,13 @@ else {
     $totAllowedMsg = $AllowedCnt;
 }
 print_working( "Allowed Users: " . CYAN $totAllowedMsg );
+if ( $UserCnt > $AllowedCnt ) {
+    print_warn("\t \\_ User Count Exceeded - Please contact Customer Service!") unless ( $totAllowedMsg eq "Unlimited" || $AllowedCnt == 0 );
+}
 check_for_license_status_json();
 check_for_solo();
 check_for_development();
 check_for_onetime();
-if ( $UserCnt > $AllowedCnt ) {
-    print_warn("\t \\_ User Count Exceeded - Please contact Customer Service!") unless ( $totAllowedMsg eq "Unlimited" || $AllowedCnt == 0 );
-}
 print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
 check_for_GCE();
 check_for_AWS();
@@ -467,16 +467,17 @@ sub get_mainip {
         $mainip = $_;
     }
     close($fh);
+    chomp($mainip);
     if ($mainip) {
         print_OK( "\t\\_ " . $mainip . "\n" ) unless ( !$verbose );
         my $isOnServer = qx[ ip addr show | grep $mainip ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
         chomp($isOnServer);
         if ( !($isOnServer) ) {
             print RED " [WARN] /var/cpanel/mainip [$mainip] is not bound to this server.\n";
-            print YELLOW "\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck";
+            print YELLOW "\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck\n";
             push(
                 @WARNINGS,
-                "/var/cpanel/mainip [$mainip] not bound to this server.\n\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck"
+                "/var/cpanel/mainip [$mainip] not bound to this server.\n\t\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck"
             );
         }
     }
@@ -1423,16 +1424,16 @@ sub chk_cgls {
         my $fStat = lstat($file);
         if ( -f $file or -d $file and not -z $file and not -l $file ) {
             my $ignoreHash = ignoreHashes($file);
-            push @shenanigans, "[" . $file . "] " unless( $ignoreHash );
+            push @shenanigans, "[" . $file . "] " unless ($ignoreHash);
         }
     }
     my @shenaniganlist;
     if ( scalar(@shenanigans) > 1 ) {
         @shenaniganlist = ( shuffle @shenanigans )[ 0 .. ( 2 - 1 ) ];
     }
-    else { 
+    else {
         @shenaniganlist = @shenanigans;
-    } 
+    }
     if ( scalar(@shenaniganlist) > 0 ) {
         $sendtomsg = CYAN "Please send to L3";
         push( @WARNINGS, "Found evidence related to CPANEL-22182 " . $sendtomsg ) unless ( !iam('cptech') || $cgls );
@@ -2118,7 +2119,6 @@ sub check_for_license_status_json {
         close($file_fh);
     }
 
-    #return unless( defined $licstatus->{code} && $licstatus->{code} != 200 );
     return unless ( defined $licstatus->{code} );
     if ( $licstatus->{code} == 200 ) {
         print_working( 'Last cpkeyclt check: ' . BOLD GREEN "(" . $licstatus->{code} . ") " . $licstatus->{message} );
@@ -2131,8 +2131,10 @@ sub check_for_license_status_json {
 }
 
 sub ignoreHashes {
-    my $FileToIgnore  = shift;
-    my ($HashToIgnore) = (split(/\s+/,qx[ sha256sum $FileToIgnore ]));
+    my $FileToIgnore = shift;
+
+    #my ($HashToIgnore) = (split(/\s+/,qx[ sha256sum $FileToIgnore ]));
+    my ($HashToIgnore) = ( split( /\s+/, Cpanel::SafeRun::Timed::timedsaferun( 5, 'sha256sum', "$FileToIgnore" ) ) );
     my @hashes2ignore = qw(
       c9dd336748b4fc2ab4bac2cb5a4690e13e03eb64d51cd000584e6da253145d11
       0290562d8299414dfb276d534000d122dbc1c514f49ca7ca0757ddd519880636
