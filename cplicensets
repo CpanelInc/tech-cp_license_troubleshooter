@@ -36,13 +36,14 @@
 use strict;
 use warnings;
 
-my $version = "2.0.34";
+my $version = "2.0.35";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
 our $verify_license_raw;
 our $verify_license_data;
 our $L3 = 0;
+our $CS = 0;
 use Readonly;
 Readonly my $LICENSE_LOG => '/usr/local/cpanel/logs/license_log';
 
@@ -107,7 +108,6 @@ our $cgls       = 0;
 our $timenow    = time();
 our $isGCE_IP;
 our $isAWS_IP;
-our $sendtomsg = "";
 
 get_external_ip();
 
@@ -141,7 +141,8 @@ my $ExpiredLicense = "";
 my $LicStatus      = 0;
 my $valid_products = "";
 if ( !$package && !$partner && !$isSolo && !$AllowedCnt ) {
-    $ExpiredLicense = " [ EXPIRED! ]";
+    $ExpiredLicense = " [ EXPIRED? ]";
+    $CS = 1;
 }
 else {
     $LicStatus      = 1;
@@ -247,6 +248,20 @@ get_last_reboots();
 
 my $warncnt = @WARNINGS;
 if ( $warncnt > 0 ) {
+    if ($L3) {
+        push @WARNINGS, RED "Send to L3" unless( !iam('cptech'));
+    }
+    if ($CS) {
+        my $CSA = CSA();
+        if ($CSA) {
+            # CS is on shift and nothing suspicious was found.
+            push @WARNINGS, RED "Send to Customer Service" unless($L3);
+        }
+        else {
+            # CS is not on shift
+            push @WARNINGS, RED "Send to L3" unless( !iam('cptech'));
+        }
+    }
     print "\n";
     print YELLOW "Found the following (possibly related) issues:\n";
     foreach my $warnmess (@WARNINGS) {
@@ -528,7 +543,8 @@ sub get_wwwacctconf_ip {
 
 sub get_logStats {
     if ( !-e $LICENSE_LOG ) {
-        push @WARNINGS, "license_log file is missing - Send to L3" unless ( !iam('cptech') );
+        push @WARNINGS, "license_log file is missing" unless ( !iam('cptech') );
+        $L3 = 1;
     }
     else {
         return unless ($verbose);
@@ -1103,29 +1119,8 @@ sub check_for_license_error {
         chomp($errline);
         print RED "\t\\_ $errline\n" unless ( !$verbose );
         if ( $errline =~ m/activated too many times on different machines/ ) {
-            my $CSA = CSA();
-            if ($CSA) {
-                if ($L3) {
-                    $sendtomsg = CYAN "Please send to L3";
-                    $L3        = 1;
-                }
-                else {
-                    $sendtomsg = CYAN "Please send to Customer Service" unless ($L3);
-                }
-                push(
-                    @WARNINGS,
-                    "This license has been activated too many times - " . $sendtomsg
-                ) unless ( !iam('cptech') );
-            }
-            else {
-                $sendtomsg = CYAN "Please send to L3";
-                $L3        = 1;
-                push(
-                    @WARNINGS,
-                    "This license has been activated too many times - " . $sendtomsg
-                ) unless ( !iam('cptech') || $L3 );
-            }
-            $toomany = 1;
+            $L3 = 0;
+            $CS = 1;
         }
     }
     if ( $toomany == 0 ) {
@@ -1259,7 +1254,7 @@ sub check_for_cpkeyclt_from_cli {
     open( my $fh, '<', '/usr/local/cpanel/logs/license_log' );
     my @Last20cpkeyclt;
     while (<$fh>) {
-        chomp($fh);
+        chomp($_);
         if ( $_ =~ m/License Update Request/ ) {
             push @Last20cpkeyclt, $_;
         }
@@ -1304,12 +1299,10 @@ sub chk_fwdip {
     foreach my $fwdip (@FWDIP) {
         chomp($fwdip);
         if ( $fwdip =~ m/208.74./ ) {
-            $sendtomsg = CYAN "Please send to L3";
             $L3        = 1;
             push(
                 @WARNINGS,
-                "Found $fwdip in /var/cpanel/domainfwdip file - " . $sendtomsg
-            ) unless ( !iam('cptech') );
+                "Found $fwdip in /var/cpanel/domainfwdip file" ) unless ( !iam('cptech') );
         }
     }
 }
@@ -1325,8 +1318,7 @@ sub getHist {
         chomp($match);
         next unless ($match);
         if ($match) {
-            $sendtomsg = CYAN "Please send to L3";
-            push( @WARNINGS, "Found evidence of CPANEL-22182 in /root history " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
+            push( @WARNINGS, "Found evidence of CPANEL-22182 in /root history" ) unless ( !iam('cptech') );
             $L3 = 1;
         }
     }
@@ -1341,8 +1333,7 @@ sub chk_upcp_posthook {
         foreach my $lookfor (@lookfor) {
             chomp($lookfor);
             if ( $match =~ /$lookfor/ ) {
-                $sendtomsg = CYAN "Please send to L3";
-                push( @WARNINGS, "Found evidence of CPANEL-22182 in the /usr/local/cpanel/scripts/postupcp hook " . $sendtomsg ) unless ( !iam('cptech') || $L3 == 1 );
+                push( @WARNINGS, "Found evidence of CPANEL-22182 in the /usr/local/cpanel/scripts/postupcp hook" ) unless ( !iam('cptech'));
                 $L3 = 1;
                 last;
             }
@@ -1358,11 +1349,7 @@ sub chk_etc_hosts {
     foreach my $hostline (@HOSTS) {
         chomp($hostline);
         if ( $hostline =~ m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net/ ) {
-            $sendtomsg = CYAN "Please send to L3";
-            push(
-                @WARNINGS,
-                "Found $hostline in /etc/hosts - " . $sendtomsg
-            ) unless ( $L3 == 1 || !iam('cptech') );
+            push( @WARNINGS, "Found $hostline in /etc/hosts" ) unless ( !iam('cptech') );
             $L3 = 1;
         }
     }
@@ -1371,8 +1358,7 @@ sub chk_etc_hosts {
         while (<$fh2>) {
             chomp($_);
             if ( $_ =~ m/88.198.132.70|68.183.71.131|88.198.132.68/ ) {
-                $sendtomsg = CYAN "Please send to L3";
-                push( @WARNINGS, "Found evidence of CPANEL-22182 in /etc/hosts.allow " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
+                push( @WARNINGS, "Found evidence of CPANEL-22182 in /etc/hosts.allow" ) unless ( !iam('cptech') );
                 $L3 = 1;
                 last;
             }
@@ -1387,8 +1373,7 @@ sub chk_mounts {
     return unless (@liscMounted);
     foreach my $mount_line (@liscMounted) {
         if ( $mount_line =~ m/lisc/ ) {
-            $sendtomsg = CYAN "Please send to L3";
-            push( @WARNINGS, "cpanel.lisc possibly mounted - " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
+            push( @WARNINGS, "cpanel.lisc possibly mounted" ) unless ( !iam('cptech') );
             $L3 = 1;
         }
     }
@@ -1403,8 +1388,7 @@ sub chk_etc_ips {
             push( @WARNINGS, "$external_ip_address found in /etc/ips file. You should not add the licensed IP as an alias!" );
         }
         if ( $_ =~ m{^208\.74\.} ) {
-            $sendtomsg = CYAN "Please send to L3";
-            push( @WARNINGS, "Found cPanel IP's within /etc/ips file - " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
+            push( @WARNINGS, "Found cPanel IP's within /etc/ips file" ) unless ( !iam('cptech') );
             $L3 = 1;
         }
     }
@@ -1435,20 +1419,18 @@ sub chk_cgls {
         @shenaniganlist = @shenanigans;
     }
     if ( scalar(@shenaniganlist) > 0 ) {
-        $sendtomsg = CYAN "Please send to L3";
-        $L3        = 1;
-        push( @WARNINGS, "Found evidence related to CPANEL-22182 " . $sendtomsg ) unless ( !iam('cptech') || $cgls || $L3 );
+        $L3 = 1;
+        push( @WARNINGS, "Found evidence related to CPANEL-22182" ) unless ( !iam('cptech') );
+        push( @WARNINGS, "\t " . WHITE @shenaniganlist ) unless ( !iam('cptech') );
         $cgls = 1;
-        push( @WARNINGS, "\t " . WHITE @shenaniganlist ) unless ( !iam('cptech') || $cgls || $L3 );
     }
 }
 
 sub chk_cgls2 {
     my $isASCII = Cpanel::SafeRun::Timed::timedsaferun( 5, 'file', '/usr/local/cpanel/cpkeyclt' );
     return unless ( $isASCII =~ m/ASCII/ );
-    $sendtomsg = CYAN "Please send to L3";
-    push( @WARNINGS, "Found evidence of CPANEL-22182 " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') || $cgls );
     $L3   = 1;
+    push( @WARNINGS, "Found evidence of CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
     $cgls = 1;
 }
 
@@ -1458,9 +1440,8 @@ sub chk_rclocal {
     while (<$fh>) {
         chomp($_);
         if ( $_ =~ m/cpkeyclt/ ) {
-            $sendtomsg = CYAN "Please send to L3";
-            push( @WARNINGS, "Found evidence of CPANEL-22182 in /etc/rc.local " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
             $L3 = 1;
+            push( @WARNINGS, "Found evidence of CPANEL-22182 in /etc/rc.local" ) unless ( !iam('cptech') );
         }
     }
     close($fh);
@@ -1717,7 +1698,6 @@ sub check_cpanel_lisc_file {
     print_working("Checking permissions on cpanel.lisc file: ")
       unless ( !$verbose );
 
-    #my $statmode = Cpanel::SafeRun::Timed::timedsaferun( 4, 'stat', '-c', '"%a"', "$cPLiscFile" );
     my $statmode = Cpanel::SafeRun::Timed::timedsaferun( 4, 'stat', '-c', '%a', "$cPLiscFile" );
     chomp($statmode);
     if ( $statmode != 644 ) {
@@ -1736,12 +1716,10 @@ sub check_cpanel_lisc_file {
         push( @WARNINGS, "$cPLiscFile file is older than 7 days!" );
     }
 
-    #my $attr = `/usr/bin/lsattr $cPLiscFile`;
     my $attr = Cpanel::SafeRun::Timed::timedsaferun( 4, '/usr/bin/lsattr', "$cPLiscFile" );
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
-        $sendtomsg = CYAN "Please send to L3";
-        push( @WARNINGS, "$cPLiscFile is immutable - " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
         $L3 = 1;
+        push( @WARNINGS, "$cPLiscFile is immutable" ) unless ( !iam('cptech') );
     }
     print_working("Checking if cpanel.lisc can be locked: ") unless ( !$verbose );
     my $lockable = Cpanel::SafeRun::Timed::timedsaferun( 0, 'flock', '-w', '5', "$cPLiscFile", '-c', 'echo 1 || echo 0' );
@@ -1750,12 +1728,8 @@ sub check_cpanel_lisc_file {
     }
     else {
         print RED "\t\\_ No\n" unless ( !$verbose );
-        $sendtomsg = CYAN "Please send to L3";
-        push(
-            @WARNINGS,
-            "Could not obtain lock on $cPLiscFile - " . $sendtomsg
-        ) unless ( $L3 == 1 || !iam('cptech') );
         $L3 = 1;
+        push( @WARNINGS, "Could not obtain lock on $cPLiscFile" ) unless ( !iam('cptech') );
     }
 }
 
@@ -1827,9 +1801,8 @@ sub get_cpsrvd_restarts {
               unless ( $histline =~ m/grep/ );
         }
         if ( $histline =~ m/cgls/ ) {
-            $sendtomsg = CYAN "Please send to L3";
-            push( @WARNINGS, "Found evidence of CPANEL-22182 " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') || $cgls );
             $L3   = 1;
+            push( @WARNINGS, "Found evidence of CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
             $cgls = 1;
         }
     }
@@ -2024,16 +1997,14 @@ sub proxy_chk {
     foreach my $port (@ports2chk) {
         $is_listening = Cpanel::SafeRun::Timed::timedsaferun( 6, 'lsof', "-itcp:$port" );
         if ($is_listening) {
-            $sendtomsg = CYAN "Please send to L3";
-            push( @WARNINGS, "Possible proxy found listening on port: $port - " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
             $L3 = 1;
+            push( @WARNINGS, "Possible proxy found listening on port: $port" ) unless ( !iam('cptech') );
         }
     }
     if ( -d "/root/pc4" ) {
         if ( -e "/root/pc4/libproxychains4.so" or -e "/root/pc4/proxychains4" or -e "/root/pc4/cpsys2.conf" or -e "/root/pc4/proxychains-ng-master" ) {
-            $sendtomsg = CYAN "Please send to L3";
-            push( @WARNINGS, "Possible proxy found /root/pc4 directory exists - " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
             $L3 = 1;
+            push( @WARNINGS, "Possible proxy found /root/pc4 directory exists" ) unless ( !iam('cptech') );
         }
     }
     return if ( !-e "/usr/bin/traceroute" );
@@ -2041,9 +2012,8 @@ sub proxy_chk {
     my $troute = qx[ traceroute -T -p 2089 auth.cpanel.net 2>/dev/null | grep -v 'traceroute to' | wc -l ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
 
     if ( $troute < 3 ) {
-        $sendtomsg = CYAN "Please send to L3";
-        push( @WARNINGS, "Possible proxy found - (traceroute test) " . $sendtomsg ) unless ( $L3 == 1 || !iam('cptech') );
         $L3 = 1;
+        push( @WARNINGS, "Possible proxy found - (traceroute test)" ) unless ( !iam('cptech') );
     }
 }
 
@@ -2097,10 +2067,10 @@ sub get_whmapi1 {    ## no critic (RequireArgUnpacking)
 sub chk_cgls3 {
     my $attr = Cpanel::SafeRun::Timed::timedsaferun( 5, '/usr/bin/lsattr', '/usr/local/cpanel/cpkeyclt' );
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
-        $sendtomsg = CYAN "Please send to L3";
-        push( @WARNINGS, "Found evidence related to [CPANEL-22182]. " . $sendtomsg )        unless ( $L3 == 1 || !iam('cptech') );
-        push( @WARNINGS, "\t/usr/local/cpanel/cpkeyclt is set to [IMMUTABLE/APPEND-ONLY]" ) unless ( $L3 == 1 || !iam('cptech') );
         $L3 = 1;
+        push( @WARNINGS, "Found evidence related to CPANEL-22182." )        unless ( $cgls || !iam('cptech') );
+        push( @WARNINGS, "\t/usr/local/cpanel/cpkeyclt is set to [IMMUTABLE/APPEND-ONLY]" ) unless ( $cgls || !iam('cptech') );
+        $cgls = 1;
     }
 }
 
@@ -2116,9 +2086,18 @@ sub check_for_license_status_json {
 
     return unless ( defined $licstatus->{code} );
     if ( $licstatus->{code} == 200 ) {
+        # All good!
         print_working( 'Last cpkeyclt check: ' . BOLD GREEN "(" . $licstatus->{code} . ") " . $licstatus->{message} );
+        return;
+    }
+    if ( $licstatus->{code} == 600 ) {
+        # Locked
+        print_working( 'Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
+        push( @WARNINGS, "Last cpkeyclt check: (" . $licstatus->{code} . ") " . $licstatus->{message} );
+        $L3 = 0;
     }
     else {
+        # All other codes (other than 200 or 600)
         print_working( 'Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
         push( @WARNINGS, "Last cpkeyclt check: (" . $licstatus->{code} . ") " . $licstatus->{message} );
     }
