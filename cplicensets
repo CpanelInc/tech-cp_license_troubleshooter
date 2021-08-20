@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.35";
+my $version = "2.0.36";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -66,6 +66,7 @@ use JSON::MaybeXS qw(encode_json decode_json);
 use Cpanel::Verify ();
 use NetAddr::IP;
 use Text::CSV;
+use Cpanel::OS;
 use Cpanel::OSSys::Env;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
@@ -75,6 +76,24 @@ use Time::Seconds;
 use List::Util 'first';
 $Term::ANSIColor::AUTORESET = 1;
 local $| = 1;
+
+my ( $distro, $distro_version, $distro_major, $distro_minor );
+if ( -e '/usr/local/cpanel/Cpanel/Sys.pm' ) {
+
+    # up to 94
+    eval("use Cpanel::Sys");        ## no critic (BuiltinFunctions::ProhibitStringyEval)
+    eval("use Cpanel::Sys::OS");    ## no critic (BuiltinFunctions::ProhibitStringyEval)
+    $distro         = Cpanel::Sys::OS::getos();
+    $distro_version = Cpanel::Sys::OS::getreleaseversion();
+}
+if ( -e '/usr/local/cpanel/Cpanel/OS.pm' ) {
+
+    # 96+
+    $distro         = Cpanel::OS->instance->distro;
+    $distro_major   = Cpanel::OS->instance->major;
+    $distro_minor   = Cpanel::OS->instance->minor;
+    $distro_version = $distro_major . "." . $distro_minor;
+}
 
 _init_run_state();
 if ( exists $ENV{'PACHA_AUTOFIXER'} ) {
@@ -142,7 +161,7 @@ my $LicStatus      = 0;
 my $valid_products = "";
 if ( !$package && !$partner && !$isSolo && !$AllowedCnt ) {
     $ExpiredLicense = " [ EXPIRED? ]";
-    $CS = 1;
+    $CS             = 1;
 }
 else {
     $LicStatus      = 1;
@@ -249,17 +268,18 @@ get_last_reboots();
 my $warncnt = @WARNINGS;
 if ( $warncnt > 0 ) {
     if ($L3) {
-        push @WARNINGS, RED "Send to L3" unless( !iam('cptech'));
+        push @WARNINGS, RED "Send to L3" unless ( !iam('cptech') );
     }
     if ($CS) {
         my $CSA = CSA();
         if ($CSA) {
+
             # CS is on shift and nothing suspicious was found.
-            push @WARNINGS, RED "Send to Customer Service" unless($L3);
+            push @WARNINGS, RED "Send to Customer Service" unless ($L3);
         }
         else {
             # CS is not on shift
-            push @WARNINGS, RED "Send to L3" unless( !iam('cptech'));
+            push @WARNINGS, RED "Send to L3" unless ( !iam('cptech') );
         }
     }
     print "\n";
@@ -664,12 +684,15 @@ sub arping_check {
 }
 
 sub check_for_multiple_defroute {
+    return                                                     unless ( -e "/etc/sysconfig/network-scripts" );
     print_working("Checking for multiple DEFROUTE=yes lines:") unless ( !$verbose );
-    opendir( NETSCRIPTS, "/etc/sysconfig/network-scripts/" );
-    my @defroutes = readdir(NETSCRIPTS);
-    close(NETSCRIPTS);
+    my @defroutes;
+    opendir( my $dir_fh, "/etc/sysconfig/network-scripts/" );
+    @defroutes = grep { !/^\.\.?$/ } readdir $dir_fh;
+    closedir $dir_fh;
     my $defroutecnt  = 0;
     my $defrouteline = "[ ";
+
     foreach my $NetScriptFile (@defroutes) {
         chomp($NetScriptFile);
         next unless ( $NetScriptFile =~ m/ifcfg-/ );
@@ -1203,7 +1226,8 @@ sub check_for_hostname_changes {
         }
     }
     print_working("Checking /var/log/messages for hostname changes:");
-    open( my $fh2, '<', '/var/log/messages' );
+    my $messfile = ( $distro eq "ubuntu" ) ? "/var/log/kern.log" : "/var/log/messages";
+    open( my $fh2, '<', "$messfile" );
     my @messlogRestarts;
     while (<$fh2>) {
         chomp($_);
@@ -1256,7 +1280,7 @@ sub check_for_cpkeyclt_from_cli {
     while (<$fh>) {
         chomp($_);
         if ( $_ =~ m/License Update Request/ ) {
-            push @Last20cpkeyclt, $_;
+            push @Last20cpkeyclt, $_ . "\n";
         }
     }
     close($fh);
@@ -1299,10 +1323,11 @@ sub chk_fwdip {
     foreach my $fwdip (@FWDIP) {
         chomp($fwdip);
         if ( $fwdip =~ m/208.74./ ) {
-            $L3        = 1;
+            $L3 = 1;
             push(
                 @WARNINGS,
-                "Found $fwdip in /var/cpanel/domainfwdip file" ) unless ( !iam('cptech') );
+                "Found $fwdip in /var/cpanel/domainfwdip file"
+            ) unless ( !iam('cptech') );
         }
     }
 }
@@ -1333,7 +1358,7 @@ sub chk_upcp_posthook {
         foreach my $lookfor (@lookfor) {
             chomp($lookfor);
             if ( $match =~ /$lookfor/ ) {
-                push( @WARNINGS, "Found evidence of CPANEL-22182 in the /usr/local/cpanel/scripts/postupcp hook" ) unless ( !iam('cptech'));
+                push( @WARNINGS, "Found evidence of CPANEL-22182 in the /usr/local/cpanel/scripts/postupcp hook" ) unless ( !iam('cptech') );
                 $L3 = 1;
                 last;
             }
@@ -1421,7 +1446,7 @@ sub chk_cgls {
     if ( scalar(@shenaniganlist) > 0 ) {
         $L3 = 1;
         push( @WARNINGS, "Found evidence related to CPANEL-22182" ) unless ( !iam('cptech') );
-        push( @WARNINGS, "\t " . WHITE @shenaniganlist ) unless ( !iam('cptech') );
+        push( @WARNINGS, "\t " . WHITE @shenaniganlist )            unless ( !iam('cptech') );
         $cgls = 1;
     }
 }
@@ -1429,7 +1454,7 @@ sub chk_cgls {
 sub chk_cgls2 {
     my $isASCII = Cpanel::SafeRun::Timed::timedsaferun( 5, 'file', '/usr/local/cpanel/cpkeyclt' );
     return unless ( $isASCII =~ m/ASCII/ );
-    $L3   = 1;
+    $L3 = 1;
     push( @WARNINGS, "Found evidence of CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
     $cgls = 1;
 }
@@ -1451,13 +1476,15 @@ sub check_crons {
     print_working("Checking for cpkeyclt in cron related files") unless ( !$verbose );
     my ( $ExistsInCronLog, $ExistsInCron, $CronPositive );
     my $cronservice = 0;
+    my $cronlog     = ( $distro eq "ubuntu" ) ? "/var/log/syslog" : "/var/log/cron";
+    my $servicename = ( $distro eq "ubuntu" ) ? "cron.service"    : "crond.service";
     if ( -e ("/usr/bin/systemctl") ) {
-        my $cronservice_status = Cpanel::SafeRun::Timed::timedsaferun( 5, 'systemctl', 'status', 'crond.service' );
+        my $cronservice_status = Cpanel::SafeRun::Timed::timedsaferun( 5, 'systemctl', 'status', "$servicename" );
         if ( $cronservice_status =~ m/active \(running\)/ ) {
             $cronservice = 1;
         }
     }
-    if ( $cronservice && !-e ("/var/log/cron") ) {
+    if ( $cronservice && !-e ("$cronlog") ) {
         $ExistsInCronLog = Cpanel::SafeRun::Timed::timedsaferun( 5, '/usr/bin/journalctl', '-u', 'cron' );
         if ( $ExistsInCronLog =~ m/cpkeyclt/ ) {
             print RED "\t\\_ Found cpkeyclt in systemd cron [journalctl]\n"
@@ -1466,8 +1493,14 @@ sub check_crons {
             $CronPositive = 1;
         }
     }
-    elsif ( -e ("/var/log/cron") ) {
-        my @cron_log_files = glob(q{/var/log/cron*});
+    elsif ( -e ("$cronlog") ) {
+        my @cron_log_files;
+        if ( $distro eq "ubuntu" ) {
+            @cron_log_files = glob(q{/var/log/syslog*});
+        }
+        else {
+            @cron_log_files = glob(q{/var/log/cron*});
+        }
         foreach my $cron_log_file (@cron_log_files) {
             chomp($cron_log_file);
             open( my $fh, '<', "$cron_log_file" );
@@ -1492,7 +1525,13 @@ sub check_crons {
         );
         $CronPositive = 1;
     }
-    my @cron_spool_files = glob(q{/var/spool/cron/*});
+    my @cron_spool_files;
+    if ( $distro eq "ubuntu" ) {
+        @cron_spool_files = glob(q{/var/spool/cron/crontabs/*});
+    }
+    else {
+        @cron_spool_files = glob(q{/var/spool/cron/*});
+    }
     foreach my $cron_spool_file (@cron_spool_files) {
         chomp($cron_spool_file);
         open( my $fh, '<', "$cron_spool_file" );
@@ -1801,7 +1840,7 @@ sub get_cpsrvd_restarts {
               unless ( $histline =~ m/grep/ );
         }
         if ( $histline =~ m/cgls/ ) {
-            $L3   = 1;
+            $L3 = 1;
             push( @WARNINGS, "Found evidence of CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
             $cgls = 1;
         }
@@ -2019,7 +2058,8 @@ sub proxy_chk {
 
 sub chk_for_cloud_ready {
     return if ( -e "/usr/local/cpanel/.cloud-ready" );
-    open( my $fh, '<', '/var/log/messages' );
+    my $messfile = ( $distro eq "ubuntu" ) ? "/var/log/kern.log" : "/var/log/messages";
+    open( my $fh, '<', "$messfile" );
     while (<$fh>) {
         if ( $_ =~ m/rc.local/ && $_ =~ m/Unknown error/ ) {
             push( @WARNINGS, ".cloud-ready touchfile not found under /usr/local/cpanel. Is hostname reverting? [NO-1573]" );
@@ -2068,7 +2108,7 @@ sub chk_cgls3 {
     my $attr = Cpanel::SafeRun::Timed::timedsaferun( 5, '/usr/bin/lsattr', '/usr/local/cpanel/cpkeyclt' );
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
         $L3 = 1;
-        push( @WARNINGS, "Found evidence related to CPANEL-22182." )        unless ( $cgls || !iam('cptech') );
+        push( @WARNINGS, "Found evidence related to CPANEL-22182." )                        unless ( $cgls || !iam('cptech') );
         push( @WARNINGS, "\t/usr/local/cpanel/cpkeyclt is set to [IMMUTABLE/APPEND-ONLY]" ) unless ( $cgls || !iam('cptech') );
         $cgls = 1;
     }
@@ -2086,11 +2126,13 @@ sub check_for_license_status_json {
 
     return unless ( defined $licstatus->{code} );
     if ( $licstatus->{code} == 200 ) {
+
         # All good!
         print_working( 'Last cpkeyclt check: ' . BOLD GREEN "(" . $licstatus->{code} . ") " . $licstatus->{message} );
         return;
     }
     if ( $licstatus->{code} == 600 ) {
+
         # Locked
         print_working( 'Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
         push( @WARNINGS, "Last cpkeyclt check: (" . $licstatus->{code} . ") " . $licstatus->{message} );
