@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.37";
+my $version = "2.0.38";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -89,21 +89,24 @@ if ( -e '/usr/local/cpanel/Cpanel/Sys.pm' ) {
 if ( -e '/usr/local/cpanel/Cpanel/OS.pm' ) {
 
     if ( Cpanel::OS->can('instance') ) {
+
         # 96 and 98
-        $distro         = Cpanel::OS->instance->distro;
-        $distro_major   = Cpanel::OS->instance->major;
-        $distro_minor   = Cpanel::OS->instance->minor;
+        $distro       = Cpanel::OS->instance->distro;
+        $distro_major = Cpanel::OS->instance->major;
+        $distro_minor = Cpanel::OS->instance->minor;
     }
     elsif ( Cpanel::OS->can('supported_methods') ) {
+
         # 100+
-        $distro         = Cpanel::OS->_instance->distro;
-        $distro_major   = Cpanel::OS->_instance->major;
-        $distro_minor   = Cpanel::OS->_instance->minor;
+        $distro       = Cpanel::OS->_instance->distro;
+        $distro_major = Cpanel::OS->_instance->major;
+        $distro_minor = Cpanel::OS->_instance->minor;
     }
     $distro_version = $distro_major . "." . $distro_minor;
 }
 
 _init_run_state();
+
 if ( exists $ENV{'PACHA_AUTOFIXER'} ) {
     _set_run_type('cptech');
 }
@@ -223,7 +226,7 @@ check_for_license_status_json();
 check_for_solo();
 check_for_development();
 check_for_onetime();
-print_working( "Active Profile Node " . CYAN $ActiveProfileNode );
+print_working( "Active Profile Node " . CYAN $ActiveProfileNode ) unless ( $ActiveProfileNode eq "" );
 check_for_GCE();
 check_for_AWS();
 chk_for_cloud_ready();
@@ -395,10 +398,11 @@ sub verify_license {
     }
     my $lnAllowedCnt = 0;
     if ( $tcPackage && $tcPartner ) {
-        if ( $tcPackage =~ m/solo/i )                              { $lnAllowedCnt = 1; $tlisSolo = 1; }
-        if ( $tcPackage =~ m/admin/i )                             { $lnAllowedCnt = 5; }
-        if ( $tcPackage =~ m/pro/i )                               { $lnAllowedCnt = 30; }
-        if ( $tcPackage =~ m/plus/i )                              { $lnAllowedCnt = 50; }
+        if ( $tcPackage =~ m/solo/i )  { $lnAllowedCnt = 1; $tlisSolo = 1; }
+        if ( $tcPackage =~ m/admin/i ) { $lnAllowedCnt = 5; }
+        if ( $tcPackage =~ m/pro/i )   { $lnAllowedCnt = 30; }
+        if ( $tcPackage =~ m/plus/i )  { $lnAllowedCnt = 50; }
+
         # SEE TECH-1298
         #if ( $tcPackage =~ m/premier/i )                           { $lnAllowedCnt = 100; }
         if ( $tcPackage =~ m/premier/i )                           { $lnAllowedCnt = 0; }
@@ -1344,7 +1348,8 @@ sub chk_fwdip {
 
 sub getHist {
     my @lookfor = (
-        'lic.bigconfig.com', 'cpsanitycheck.so', 'sectools', '3jenan', 'secinstall', 'update_cpanelv2', 'license.onlinelic.net', '\./s.sh', 'tsocks', 'yoncu.com', 'cpanel.resellercenter.ir', 'add blackhole 208\.74\.', 'Lisans -Zorla', 'Lisans -Guncelle', 'Lisans -Kaldır', 'Lisans -Pasif', 'Lisans -Aktif', 'Lisans -5min', 'sistem/Kurulum', 'buylicense.software', 'cyberlic', 'asanlicense.ir', 'lisanstr.com', 'license.licensemaker.com', 'up.ehabdiab.com', 'license.tqniait.com', 'incognito.warezservers.com', 'hostingmango.com', 'licensehosts.com', 'license.promohosts.com', 'PhLicenseCP', 'cheapcpanel.net', 'remove_reseller.sh', 'licenseman.net', 'licensefarm.com', 'licenseportal.in', 'solicense.com', 'licensepanel.io'
+        'lic.bigconfig.com', 'cpsanitycheck.so', 'sectools', '3jenan', 'secinstall', 'update_cpanelv2', 'license.onlinelic.net', '\./s.sh', 'tsocks', 'yoncu.com', 'cpanel.resellercenter.ir', 'add blackhole 208\.74\.', 'Lisans -Zorla', 'Lisans -Guncelle', 'Lisans -Kaldır', 'Lisans -Pasif', 'Lisans -Aktif', 'Lisans -5min', 'sistem/Kurulum', 'buylicense.software', 'cyberlic', 'asanlicense.ir',
+        'lisanstr.com',      'license.licensemaker.com', 'up.ehabdiab.com', 'license.tqniait.com', 'incognito.warezservers.com', 'hostingmango.com', 'licensehosts.com', 'license.promohosts.com', 'PhLicenseCP', 'cheapcpanel.net', 'remove_reseller.sh', 'licenseman.net', 'licensefarm.com', 'licenseportal.in', 'solicense.com', 'licensepanel.io'
     );
     foreach my $lookfor (@lookfor) {
         chomp($lookfor);
@@ -1352,7 +1357,7 @@ sub getHist {
         chomp($match);
         next unless ($match);
         if ($match) {
-            push( @WARNINGS, "Found evidence of CPANEL-22182 in /root history" ) unless ( !iam('cptech') );
+            push( @WARNINGS, "Found evidence of CPANEL-22182 in /root history [$lookfor]" ) unless ( !iam('cptech') || ($L3) );
             $L3 = 1;
         }
     }
@@ -2157,9 +2162,10 @@ sub check_for_license_status_json {
 }
 
 sub ignoreHashes {
-    my $FileToIgnore   = shift;
+    my $FileToIgnore = shift;
+    return if -d $FileToIgnore;
     my ($HashToIgnore) = ( split( /\s+/, Cpanel::SafeRun::Timed::timedsaferun( 5, 'sha256sum', "$FileToIgnore" ) ) );
-    my @hashes2ignore  = qw(
+    my @hashes2ignore = qw(
       c9dd336748b4fc2ab4bac2cb5a4690e13e03eb64d51cd000584e6da253145d11
       0290562d8299414dfb276d534000d122dbc1c514f49ca7ca0757ddd519880636
     );

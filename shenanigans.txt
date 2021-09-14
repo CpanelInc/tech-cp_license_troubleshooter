@@ -167,7 +167,6 @@
 /root/RcLicenseCP.1
 /root/.rcproc
 /root/rcreq
-/root/.rnd
 /root/seRcLicense_cpanel
 /root/setup
 /root/sonicins.phpbk
@@ -363,11 +362,9 @@
 /usr/local/cpanel/cpanel1
 /usr/local/cpanel/.cpanel2
 /usr/local/cpanel/cpanelbk.lisc
-/usr/local/cpanel/cpanel.lisc
 /usr/local/cpanel/cpanel.lisc2
 /usr/local/cpanel/cpanelmodule.php
 /usr/local/cpanel/cpanel_rc
-/usr/local/cpanel/cpkeyclt
 /usr/local/cpanel/.cpkeyclt
 /usr/local/cpanel/cpkeyclt1
 /usr/local/cpanel/cpkeyclt2
