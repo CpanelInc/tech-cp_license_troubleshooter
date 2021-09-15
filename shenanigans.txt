@@ -492,9 +492,6 @@
 /usr/local/license.log
 /usr/local/lstr/Lisans
 /usr/local/lstr/Versiyon
-/usr/local/lsws/conf/.last
-/usr/local/lsws/conf/trial.key
-/usr/local/lsws/conf/trial.key.old
 /usr/local/lsws/.ltrc
 /usr/local/proxychains4
 /usr/local/proxy.log
