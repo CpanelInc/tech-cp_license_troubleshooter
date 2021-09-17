@@ -355,7 +355,6 @@
 /usr/local/cgls
 /usr/local/chattr2
 /usr/local/cpane1.lisc
-/usr/local/cpanel/autofixer2
 /usr/local/cpanel/cgls
 /usr/local/cpanel/chattr2
 /usr/local/cpanel/cpane1.lisc
