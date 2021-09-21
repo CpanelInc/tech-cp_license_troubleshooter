@@ -135,6 +135,7 @@
 /root/intlic
 /root/libproxychains4.so
 /root/license.log
+/root/license.sh
 /root/.licensestatus
 /root/.licensestatus2
 /root/llc

@@ -1348,7 +1348,7 @@ sub chk_fwdip {
 
 sub getHist {
     my @lookfor = (
-        'lic.bigconfig.com', 'cpsanitycheck.so', 'sectools', '3jenan', 'secinstall', 'update_cpanelv2', 'license.onlinelic.net', '\./s.sh', 'tsocks', 'yoncu.com', 'cpanel.resellercenter.ir', 'add blackhole 208\.74\.', 'Lisans -Zorla', 'Lisans -Guncelle', 'Lisans -Kaldır', 'Lisans -Pasif', 'Lisans -Aktif', 'Lisans -5min', 'sistem/Kurulum', 'buylicense.software', 'cyberlic', 'asanlicense.ir',
+        'lic.bigconfig.com', 'cpsanitycheck.so',         'sectools', '3jenan', 'secinstall', 'update_cpanelv2', 'license.onlinelic.net', '\./s.sh', 'tsocks', 'yoncu.com', 'resellercenter.ir', 'add blackhole 208\.74\.', 'Lisans -Zorla', 'Lisans -Guncelle', 'Lisans -Kaldır', 'Lisans -Pasif', 'Lisans -Aktif', 'Lisans -5min', 'sistem/Kurulum', 'buylicense.software', 'cyberlic', 'asanlicense.ir',
         'lisanstr.com',      'license.licensemaker.com', 'up.ehabdiab.com', 'license.tqniait.com', 'incognito.warezservers.com', 'hostingmango.com', 'licensehosts.com', 'license.promohosts.com', 'PhLicenseCP', 'cheapcpanel.net', 'remove_reseller.sh', 'licenseman.net', 'licensefarm.com', 'licenseportal.in', 'solicense.com', 'licensepanel.io'
     );
     foreach my $lookfor (@lookfor) {
@@ -1357,7 +1357,7 @@ sub getHist {
         chomp($match);
         next unless ($match);
         if ($match) {
-            push( @WARNINGS, "Found evidence of CPANEL-22182 in /root history [$lookfor]" ) unless ( !iam('cptech') || ($L3) );
+            push( @WARNINGS, "Found evidence related to CPANEL-22182 in /root history [$lookfor]" ) unless ( !iam('cptech') || ($L3) );
             $L3 = 1;
         }
     }
@@ -1372,7 +1372,7 @@ sub chk_upcp_posthook {
         foreach my $lookfor (@lookfor) {
             chomp($lookfor);
             if ( $match =~ /$lookfor/ ) {
-                push( @WARNINGS, "Found evidence of CPANEL-22182 in the /usr/local/cpanel/scripts/postupcp hook" ) unless ( !iam('cptech') );
+                push( @WARNINGS, "Found evidence related to CPANEL-22182 in the /usr/local/cpanel/scripts/postupcp hook" ) unless ( !iam('cptech') );
                 $L3 = 1;
                 last;
             }
@@ -1397,7 +1397,7 @@ sub chk_etc_hosts {
         while (<$fh2>) {
             chomp($_);
             if ( $_ =~ m/88.198.132.70|68.183.71.131|88.198.132.68/ ) {
-                push( @WARNINGS, "Found evidence of CPANEL-22182 in /etc/hosts.allow" ) unless ( !iam('cptech') );
+                push( @WARNINGS, "Found evidence related to CPANEL-22182 in /etc/hosts.allow" ) unless ( !iam('cptech') );
                 $L3 = 1;
                 last;
             }
@@ -1480,7 +1480,7 @@ sub chk_rclocal {
         chomp($_);
         if ( $_ =~ m/cpkeyclt/ ) {
             $L3 = 1;
-            push( @WARNINGS, "Found evidence of CPANEL-22182 in /etc/rc.local" ) unless ( !iam('cptech') );
+            push( @WARNINGS, "Found evidence related to CPANEL-22182 in /etc/rc.local" ) unless ( !iam('cptech') );
         }
     }
     close($fh);
@@ -1855,7 +1855,7 @@ sub get_cpsrvd_restarts {
         }
         if ( $histline =~ m/cgls/ ) {
             $L3 = 1;
-            push( @WARNINGS, "Found evidence of CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
+            push( @WARNINGS, "Found evidence related to CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
             $cgls = 1;
         }
     }
