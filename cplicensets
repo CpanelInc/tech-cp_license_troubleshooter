@@ -1794,8 +1794,8 @@ sub run_rdate {
       unless ( !$verbose );
     my $rdatesuccess = Cpanel::SafeRun::Timed::timedsaferun( 5, '/usr/local/cpanel/bin/rdate', '-s', 'rdate.cpanel.net' );
     if ($rdatesuccess) {
-        print RED "\t\\_ Error - $rdatesuccess\n" unless ( !$verbose );
-        push( @WARNINGS, "rdate command failed! [$rdatesuccess]" );
+        print RED "\t\\_ Error - $rdatesuccess [ Make sure port 37 outbound is open ]\n" unless ( !$verbose );
+        push( @WARNINGS, "rdate command failed! [$rdatesuccess] [ Make sure port 37 outbound is open ]" );
     }
     else {
         print BOLD GREEN "\t\\_ Yes\n" unless ( !$verbose );

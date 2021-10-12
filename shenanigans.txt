@@ -1,7 +1,9 @@
 /bin/agent6.cpl
 /bin/cpk
 /bin/cplicense
+/bin/cplicense-32bit
 /bin/cplicense-64bit
+/bin/jonior-license
 /bin/syscare
 /etc/cpl.conf
 /etc/cron.d/cgls
@@ -70,6 +72,7 @@
 /etc/cron.d/tmp/licensesc_update
 /etc/cron.d/updategb
 /etc/cron.d/wo-com
+/etc/customcspips
 /etc/disablecsp/cpanel
 /etc/init.d/checkstatus
 /etc/init.d/cspdaemon
@@ -189,6 +192,8 @@
 /root/testls
 /root/tq-cmd
 /root/XonLicenseCP
+/sbin/jonrebo
+/srv/license.php
 /tmp/fkcplisc/verify/cpv.c
 /usr/bin/AdrinaserverLicenseLSWS
 /usr/bin/BbtLicenseCP
@@ -255,6 +260,9 @@
 /usr/bin/gbmover
 /usr/bin/gbmoverr
 /usr/bin/gbtmp
+/usr/bin/HostCartCP
+/usr/bin/HostCart_cpanel
+/usr/bin/HSLicenseCP
 /usr/bin/ilcp
 /usr/bin/installssl
 /usr/bin/intlic
@@ -327,9 +335,14 @@
 /usr/bin/.sysma/
 /usr/bin/.sysma/.sitepad
 /usr/bin/systemd-sshd
+/usr/bin/update_clnv2
+/usr/bin/update_clnv2.lock
 /usr/bin/update_cloudv2
+/usr/bin/update_cloudv2.lock
 /usr/bin/update_cpanelv2
+/usr/bin/update_cpanelv2.lock
 /usr/bin/update_cpanelv3
+/usr/bin/update_cpanelv3.lock
 /usr/bin/update_cpnginx
 /usr/bin/update_dareseller
 /usr/bin/update_diradm
@@ -352,10 +365,16 @@
 /usr/bin/update_whmreseller
 /usr/bin/update_whmsonic
 /usr/bin/XonLicenseCP
+/usr/bin/yasin
 /usr/lib64/faketime/libfaketime.so.1
 /usr/local/cgls
 /usr/local/chattr2
 /usr/local/cpane1.lisc
+/usr/local/cpanel/bin/cspconnector
+/usr/local/cpanel/bin/sendmail.txt
+/usr/local/cpanel/bin/update_cpanelv2
+/usr/local/cpanel/bin/update_cpanelv2.lock
+/usr/local/cpanel/bin/way2/
 /usr/local/cpanel/cgls
 /usr/local/cpanel/chattr2
 /usr/local/cpanel/cpane1.lisc
@@ -407,6 +426,7 @@
 /usr/local/cpanel/libexec/.ecpcpsrvd-dormant
 /usr/local/cpanel/libproxychains4.so
 /usr/local/cpanel/license.log
+/usr/local/cpanel/license/update_cpanelv2
 /usr/local/cpanel/.ltrc
 /usr/local/cpanel/.ltrc1
 /usr/local/cpanelmodule.php
@@ -446,6 +466,7 @@
 /usr/local/cpanel/whostmgr/bin/whostmgr10_rc
 /usr/local/cpanel/whostmgr/bin/whostmgr_rc
 /usr/local/cpanel/whostmgr/bin/xml-api_rc
+/usr/local/cpanel/whostmgr/cgi/check.php
 /usr/local/cpanel/whostmgr/docroot/addon_plugins/syscare.png
 /usr/local/cpanel/whostmgr/docroot/syscare/
 /usr/local/cpl2016
@@ -459,11 +480,14 @@
 /usr/local/CSPPerl.tar.gz
 /usr/local/CSPPerl.tar.gz.tmp
 /usr/local/csp/version
+/usr/local/ctls
+/usr/local/ctls/ctls
 /usr/local/ecp
 /usr/local/ecp/cpanel/lastupdated
 /usr/local/ecp/cpanel/libcpanel.so
 /usr/local/ecp/cpanel/license
 /usr/local/error_log
+/usr/local/fkcplisc
 /usr/local/GB
 /usr/local/GB/cpanel_gb
 /usr/local/GB/.cppid1
@@ -526,3 +550,5 @@
 /var/www/html/trial.key
 /var/www/vhosts/default/htdocs/lic_check.php
 /YasITCSP/
+/usr/bin/CSPUpdateV2
+/opt/csp/da
