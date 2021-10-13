@@ -99,6 +99,7 @@
 /opt/cpanel/license.log
 /opt/cpanel/proxychains4
 /opt/cpanel/proxy.log
+/opt/csp/da
 /opt/license/cpanel.lisc
 /opt/license/cpanelmodule-mail.php
 /opt/license/cpanelmodule.php
@@ -124,7 +125,6 @@
 /root/csp
 /root/CSPcPanel
 /root/cspcrons
-/root/error_log
 /root/fileshost/change1.php
 /root/fileshost/XonLicenseCP
 /root/.gbcp.pid
@@ -218,6 +218,7 @@
 /usr/bin/cspfwd
 /usr/bin/CSPPerlUpdator
 /usr/bin/CSPUpdate
+/usr/bin/CSPUpdateV2
 /usr/bin/cxsupdate
 /usr/bin/GbCpanel
 /usr/bin/gbcpcontrol
@@ -550,5 +551,3 @@
 /var/www/html/trial.key
 /var/www/vhosts/default/htdocs/lic_check.php
 /YasITCSP/
-/usr/bin/CSPUpdateV2
-/opt/csp/da
