@@ -510,6 +510,12 @@ sub get_envtype {
 }
 
 sub get_mainip {
+    if ( !-s "/var/cpanel/mainip" ) {
+        print RED "[WARN] /var/cpanel/mainip file is empty.\n"                                  unless ( !$verbose );
+        print YELLOW "\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck\n" unless ( !$verbose );
+        push( @WARNINGS, "/var/cpanel/mainip file is empty.\n\t\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck" );
+        return;
+    }
     print_working("Obtaining contents of /var/cpanel/mainip:") unless ( !$verbose );
     open my $fh, '<', '/var/cpanel/mainip';
     my $mainip;
@@ -523,7 +529,7 @@ sub get_mainip {
         my $isOnServer = qx[ ip addr show | grep $mainip ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
         chomp($isOnServer);
         if ( !($isOnServer) ) {
-            print RED " [WARN] /var/cpanel/mainip [$mainip] is not bound to this server.\n";
+            print RED "[WARN] /var/cpanel/mainip [$mainip] is not bound to this server.\n";
             print YELLOW "\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck\n";
             push(
                 @WARNINGS,
