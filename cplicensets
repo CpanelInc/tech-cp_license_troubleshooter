@@ -222,7 +222,6 @@ print_working( "Allowed Users: " . CYAN $totAllowedMsg );
 if ( $UserCnt > $AllowedCnt ) {
     print_warn("\t \\_ User Count Exceeded - Please contact Customer Service!") unless ( $totAllowedMsg eq "Unlimited" || $AllowedCnt == 0 );
 }
-check_for_license_status_json();
 check_for_solo();
 check_for_development();
 check_for_onetime();
@@ -269,6 +268,7 @@ check_auth_cpanel_resolution();
 check_iptables();
 check_other_ports();
 shenanigans();
+check_for_license_status_json();
 check_cpanel_lisc_file();
 run_rdate();
 chkCreds();
@@ -2130,6 +2130,7 @@ sub chk_cgls3 {
 
 sub check_for_license_status_json {
     return if !-e "/var/cpanel/license.status.json";
+    return if $L3;
     my $licstatus;
     if ( open my $file_fh, '<', "/var/cpanel/license.status.json" ) {
         while (<$file_fh>) {
@@ -2142,7 +2143,6 @@ sub check_for_license_status_json {
     if ( $licstatus->{code} == 200 ) {
 
         # All good!
-        print_working( 'Last cpkeyclt check: ' . BOLD GREEN "(" . $licstatus->{code} . ") " . $licstatus->{message} );
         return;
     }
     if ( $licstatus->{code} == 600 ) {
