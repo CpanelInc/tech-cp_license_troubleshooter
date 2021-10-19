@@ -1169,7 +1169,7 @@ sub check_for_license_error {
 }
 
 sub get_hostname_at_install {
-    return if !-e "/var/log/cpanel-install.log";
+    return if !-s "/var/log/cpanel-install.log";
     return unless ($verbose);
     print_working("Hostname at time of cPanel install was set to: ");
     open( my $fh, '<', '/var/log/cpanel-install.log' );
