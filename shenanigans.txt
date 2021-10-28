@@ -76,7 +76,6 @@
 /etc/disablecsp/cpanel
 /etc/init.d/checkstatus
 /etc/init.d/cspdaemon
-/etc/ld.so.preload
 /etc/profile.d/checkip.sh
 /etc/systemd/system/checkstatus.service
 /etc/systemd/system/cspdaemon.service
@@ -130,7 +129,6 @@
 /root/.gbcp.pid
 /root/.gbcp.pid1
 /root/ilcp
-/root/installer
 /root/installer.1
 /root/installer.2
 /root/installer_run
