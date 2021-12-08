@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.39";
+my $version = "2.0.40";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -171,7 +171,7 @@ my $ExpiredLicense = "";
 my $LicStatus      = 0;
 my $valid_products = "";
 if ( !$package && !$partner && !$isSolo && !$AllowedCnt ) {
-    $ExpiredLicense = " [ EXPIRED? ]";
+    $ExpiredLicense = " [ EXPIRED? ] or [ INACTIVE ]";
     $CS             = 1;
 }
 else {
@@ -211,6 +211,7 @@ if ( -e "/usr/local/cpanel/cpanel.lisc" ) {
     $ActiveProfileNode = getProfileNode();
 }
 
+$AllowedCnt = 30 if ($Trial);
 my $totAllowedMsg = "Unknown";
 if ( $AllowedCnt == 0 ) {
     $totAllowedMsg = "Unlimited";
@@ -1966,12 +1967,24 @@ sub check_for_solo {
 }
 
 sub check_for_development {
-    my $isDevelmsg = ( $package =~ m/development/i ) ? "Yes" : "No";
+    my $isDevelmsg;
+    if ($package) {
+        $isDevelmsg = ( $package =~ m/development/i ) ? "Yes" : "No";
+    }
+    else {
+        $isDevelmsg = "No";
+    }
     print_working( "Is this a DEVELOPMENT license: " . CYAN $isDevelmsg );
 }
 
 sub check_for_onetime {
-    my $isOneTimemsg = ( $package =~ m/one-time/i ) ? "Yes" : "No";
+    my $isOneTimemsg;
+    if ($package) {
+        $isOneTimemsg = ( $package =~ m/one-time/i ) ? "Yes" : "No";
+    }
+    else {
+        $isOneTimemsg = "No";
+    }
     print_working( "Is this a ONE-TIME license: " . CYAN $isOneTimemsg );
 }
 
