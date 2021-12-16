@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.40";
+my $version = "2.0.41";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -1182,7 +1182,7 @@ sub get_hostname_at_install {
     open( my $fh, '<', '/var/log/cpanel-install.log' );
     my @install_log = <$fh>;
     close($fh);
-    my $HOSTNAME_AT_INSTALL;
+    my $HOSTNAME_AT_INSTALL = "";
     foreach my $install_log_line (@install_log) {
         chomp($install_log_line);
         next unless ( $install_log_line =~ m/Validating that the system hostname/ );
@@ -1315,6 +1315,7 @@ sub check_for_cpkeyclt_from_cli {
 }
 
 sub loadHistory {
+    $histCnt = 0;
     return if ( !( -e "/root/.bash_history" ) );
     open( my $fh, '<', "/root/.bash_history" );
     @HISTORY = <$fh>;
@@ -1713,6 +1714,18 @@ sub check_iptables {
         print RED "\t\\_ Some cPanel ports may be blocked via IPTABLES\n" unless ( !$verbose );
         push( @WARNINGS, "cPanel ports may be blocked via IPTABLES Can cause cpsrvd to restart too often!" );
     }
+
+    # Check NAT table too
+    $iptables_rules = Cpanel::SafeRun::Timed::timedsaferun( 0, 'iptables', '-L', '-t', 'nat' );
+    @iptables_rules = split /\n/, $iptables_rules;
+    foreach my $ip_rule (@iptables_rules) {
+        chomp($ip_rule);
+        if ( $ip_rule =~ m/REDIRECT|REDSOCKS/ && $ip_rule =~ m/2089|208.74.120./ ) {
+            print RED "\t\\_ Found a proxy redirect via IPTABLES (nat)\n"  unless ( !$verbose && i_am('cptech') );
+            push( @WARNINGS, "Found a proxy redirect via IPTABLES (nat)" ) unless ( i_am('cptech') );
+            $L3 = 1;
+        }
+    }
 }
 
 sub check_other_ports {
@@ -2078,6 +2091,10 @@ sub proxy_chk {
             $L3 = 1;
             push( @WARNINGS, "Possible proxy found /root/pc4 directory exists" ) unless ( !iam('cptech') );
         }
+    }
+    if ( -d "/root/redsocks" ) {
+        $L3 = 1;
+        push( @WARNINGS, "Possible proxy found /root/redsocks directory exists" ) unless ( !iam('cptech') );
     }
     return if ( !-e "/usr/bin/traceroute" );
     return if ( !$trCheck );
