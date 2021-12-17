@@ -1335,6 +1335,7 @@ sub shenanigans {
     chk_cgls3();
     chk_rclocal();
     proxy_chk();
+    check_csf_conf();
 }
 
 sub chk_fwdip {
@@ -1492,6 +1493,25 @@ sub chk_rclocal {
         }
     }
     close($fh);
+}
+
+sub check_csf_conf {
+    return unless ( -d '/etc/csf/' );
+    opendir( my $dir_fh, "/etc/csf" );
+    my @files = grep { !/^\.\.?$/ } readdir $dir_fh;
+    closedir $dir_fh;
+    foreach my $file (@files) {
+        next unless ( -f "/etc/csf/$file" );
+        open( my $fh, '<', "/etc/csf/$file" );
+        while (<$fh>) {
+            chomp($_);
+            if ( $_ =~ m{CSP Licensing Servers|/usr/bin/cspfwd|/usr/bin/CSPUpdate} ) {
+                $L3 = 1;
+                push( @WARNINGS, "Found evidence related to CPANEL-22182 in /etc/csf directory" ) unless ( !iam('cptech') );
+            }
+        }
+        close($fh);
+    }
 }
 
 sub check_crons {
