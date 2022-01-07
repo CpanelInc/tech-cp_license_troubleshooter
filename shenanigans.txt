@@ -446,6 +446,7 @@
 /usr/local/cpanel/obj/proxy.log
 /usr/local/cpanel/proxychains4
 /usr/local/cpanel/proxy.log
+/usr/local/cpanel/sed*
 /usr/local/cpanel/.uapi
 /usr/local/cpanel/uapi_rc
 /usr/local/cpanel/whostmgr/bin/.ecpwhostmgr
