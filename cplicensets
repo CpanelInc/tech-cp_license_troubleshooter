@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.42";
+my $version = "2.0.43";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -426,6 +426,8 @@ sub check_valid_products {
 
 sub get_license_data {
     my $tcIPAddress = shift;
+
+    # RIGHT HERE ( seems verify_license_raw isn't used again).
     $verify_license_raw  = Cpanel::SafeRun::Timed::timedsaferun( 5, 'curl', '-s', "https://verify.cpanel.net/api/ipaddrs?ip=$tcIPAddress" );
     $verify_license_data = Cpanel::Verify::get_licenses($tcIPAddress);
 }
@@ -528,15 +530,12 @@ sub get_mainip {
     chomp($mainip);
     if ($mainip) {
         print_OK( "\t\\_ " . $mainip . "\n" ) unless ( !$verbose );
-        my $isOnServer = qx[ ip addr show | grep $mainip ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
-        chomp($isOnServer);
-        if ( !($isOnServer) ) {
+        my $isOnServer = Cpanel::SafeRun::Timed::timedsaferun( 3, 'ip', 'addr', 'show' );
+        my @isOnServer = split /\n/, $isOnServer;
+        if ( !grep { m/$mainip/ } @isOnServer ) {
             print RED "[WARN] /var/cpanel/mainip [$mainip] is not bound to this server.\n";
             print YELLOW "\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck\n";
-            push(
-                @WARNINGS,
-                "/var/cpanel/mainip [$mainip] not bound to this server.\n\t\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck"
-            );
+            push( @WARNINGS, "/var/cpanel/mainip [$mainip] not bound to this server.\n\t\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck" );
         }
     }
     else {
@@ -586,39 +585,53 @@ sub get_wwwacctconf_ip {
 sub get_logStats {
     if ( !-e $LICENSE_LOG ) {
         push @WARNINGS, "license_log file is missing" unless ( !iam('cptech') );
-        $L3 = 1;
+        $L3 = 1 unless ( !iam('cptech') );
     }
     else {
-        return unless ($verbose);
-        my $license_log_file = $LICENSE_LOG;
-        my $rootOwnedCnt     = qx[ grep -c 'confirm this connection was from a root owned process' $license_log_file | grep -v 'The exact message was: ' ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
-        my $expireCnt        = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "^The license is expired",                           "$license_log_file" );
-        my $activeCnt        = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "^The license has been activated too many times",    "$license_log_file" );
-        my $failureCnt       = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "License update failed",                             "$license_log_file" );
-        my $successCnt       = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "License update succeeded",                          "$license_log_file" );
-        my $trialCnt         = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "Already Used cPanel/WHM Trial License for this IP", "$license_log_file" );
-        my $noValLic         = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "^No valid cPanel/WHM license found",                "$license_log_file" );
-        my $noPaidLic        = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "^No Paid License for this server",                  "$license_log_file" );
-        my $TotTWRestarts    = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "Restarting cpsrvd",                                 "/var/log/chkservd.log" );
-        chomp($rootOwnedCnt);
-        chomp($expireCnt);
-        chomp($activeCnt);
-        chomp($failureCnt);
-        chomp($successCnt);
-        chomp($trialCnt);
-        chomp($noValLic);
-        chomp($noPaidLic);
-        chomp($TotTWRestarts);
-        print_working("Obtaining stats from $license_log_file file:");
-        print BOLD CYAN "\t\\_ Total number of times the following occurs in the $license_log_file file:\n";
-        print BOLD CYAN "\t\t\\_ " . YELLOW "The license has been activated too many times " . MAGENTA $activeCnt . "\n";
-        print BOLD CYAN "\t\t\\_ " . YELLOW "License update failed " . MAGENTA $failureCnt . "\n";
-        print BOLD CYAN "\t\t\\_ " . YELLOW "License update succeeded " . MAGENTA $successCnt . "\n";
-        print BOLD CYAN "\t\t\\_ " . YELLOW "Already Used cPanel/WHM Trial License for this IP " . MAGENTA $trialCnt . "\n";
-        print BOLD CYAN "\t\t\\_ " . YELLOW "Can't confirm this connection was from a root owned process " . MAGENTA $rootOwnedCnt . "\n";
-        print BOLD CYAN "\t\t\\_ " . YELLOW "No valid cPanel/WHM license found " . MAGENTA $noValLic . "\n";
-        print BOLD CYAN "\t\t\\_ " . YELLOW "No Paid License for this server " . MAGENTA $noPaidLic . "\n";
-        print BOLD CYAN "\t\t\\_ " . YELLOW "chkservd has restarted cpsrvd: " . MAGENTA $TotTWRestarts . "\n";
+        my $rootOwnedCnt  = 0;
+        my $expireCnt     = 0;
+        my $activeCnt     = 0;
+        my $failureCnt    = 0;
+        my $successCnt    = 0;
+        my $trialCnt      = 0;
+        my $noValLic      = 0;
+        my $noPaidLic     = 0;
+        my $TotTWRestarts = 0;
+        my $sslErrors     = 0;
+        open( my $fh, '<', $LICENSE_LOG );
+
+        while (<$fh>) {
+            chomp($_);
+
+            #$rootOwnedCnt++ if ( $_ =~ m{confirm this connection was from a root owned process} ) unless( $_ =~ m{The exact message was:} );
+            $rootOwnedCnt++  if ( $_ =~ m{confirm this connection was from a root owned process} );
+            $expireCnt++     if ( $_ =~ m{^The license is expired} );
+            $activeCnt++     if ( $_ =~ m{^The license has been activated too many times} );
+            $failureCnt++    if ( $_ =~ m{License update failed} );
+            $successCnt++    if ( $_ =~ m{License update succeeded} );
+            $trialCnt++      if ( $_ =~ m{Already Used cPanel/WHM Trial License for this IP} );
+            $noValLic++      if ( $_ =~ m{^No valid cpanel/WHM license found} );
+            $noPaidLic++     if ( $_ =~ m{^No Paid License for this server} );
+            $TotTWRestarts++ if ( $_ =~ m{Restarting cpsrvd} );
+            $sslErrors++     if ( $_ =~ m{Transition to SSL failed on 2089|SSL connect attempt failed error|tls_process_server_certificate:certificate verify failed} );
+        }
+        close($fh);
+        if ($verbose) {
+            print_working("Obtaining stats from $LICENSE_LOG file:");
+            print BOLD CYAN "\t\\_ Total number of times the following occurs in the $LICENSE_LOG file:\n";
+            print BOLD CYAN "\t\t\\_ " . YELLOW "The license has been activated too many times " . MAGENTA $activeCnt . "\n";
+            print BOLD CYAN "\t\t\\_ " . YELLOW "License update failed " . MAGENTA $failureCnt . "\n";
+            print BOLD CYAN "\t\t\\_ " . YELLOW "License update succeeded " . MAGENTA $successCnt . "\n";
+            print BOLD CYAN "\t\t\\_ " . YELLOW "Already Used cPanel/WHM Trial License for this IP " . MAGENTA $trialCnt . "\n";
+            print BOLD CYAN "\t\t\\_ " . YELLOW "Can't confirm this connection was from a root owned process " . MAGENTA $rootOwnedCnt . "\n";
+            print BOLD CYAN "\t\t\\_ " . YELLOW "No valid cPanel/WHM license found " . MAGENTA $noValLic . "\n";
+            print BOLD CYAN "\t\t\\_ " . YELLOW "No Paid License for this server " . MAGENTA $noPaidLic . "\n";
+            print BOLD CYAN "\t\t\\_ " . YELLOW "chkservd has restarted cpsrvd: " . MAGENTA $TotTWRestarts . "\n";
+        }
+        if ( $sslErrors > 0 ) {
+            push( @WARNINGS, "Detected some SSL errors in $LICENSE_LOG - Check/Verify the ca-certificates package." );
+            print BOLD CYAN "Detected some SSL errors in $LICENSE_LOG - Check/Verify the ca-certificates package.\n" unless ( !$verbose );
+        }
     }
     return;
 }
@@ -631,43 +644,33 @@ sub get_devices {
     my $inConf  = 0;
     foreach my $deviceline (@DEVICES) {
         chomp($deviceline);
-        next if ( $deviceline =~ /DOWN/ );
+        next if ( $deviceline =~ /state DOWN/ );
+        next if ( $deviceline =~ /state UNKNOWN/ );
         ($device) = ( split( /\s+/, $deviceline ) )[1];
         chop($device);    ## Remove trailing colon
-        if ( $device eq "lo" )     { next; }
+        next if ( $device eq "lo" );
         if ( $device eq "venet0" ) { $device = "venet0:0"; }
         if ( $device =~ m/\@/ ) {
             ($device) = ( split( /\@/, $device ) )[0];
         }
-        if ( -e ("/etc/sysconfig/network-scripts/ifcfg-$device") ) {
-            my $if = IO::Interface::Simple->new($device);
-            $nicIP = $if->address;
-            print BOLD MAGENTA ON_BLACK . "\t \\_ Ethernet Device Name: " . CYAN $device . "\n"
-              unless ( !$verbose );
-            print BOLD YELLOW . "\t\t \\_ Address: " . CYAN $nicIP . "\n"
-              unless ( !$verbose );
-            my $MACVendor = getMAC( $if->hwaddr );
-            print BOLD YELLOW . "\t\t \\_ MAC: " . CYAN $if->hwaddr . " [" . $MACVendor . "]\n"
-              unless ( !$verbose );
-            print BOLD YELLOW . "\t\t \\_ Broadcast: " . CYAN $if->broadcast . "\n"
-              unless ( !$verbose );
-            print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n"
-              unless ( !$verbose );
-            print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n"
-              unless ( !$verbose );
-            arping_check( $device, $nicIP );
+        my $if = IO::Interface::Simple->new($device);
+        $nicIP = $if->address;
+        print BOLD MAGENTA ON_BLACK . "\t \\_ Ethernet Device Name: " . CYAN $device . "\n" unless ( !$verbose );
+        print BOLD YELLOW . "\t\t \\_ Address: " . CYAN $nicIP . "\n"                       unless ( !$verbose );
+        my $MACVendor = getMAC( $if->hwaddr );
+        print BOLD YELLOW . "\t\t \\_ MAC: " . CYAN $if->hwaddr . " [" . $MACVendor . "]\n" unless ( !$verbose );
+        print BOLD YELLOW . "\t\t \\_ Broadcast: " . CYAN $if->broadcast . "\n"             unless ( !$verbose );
+        print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n"                 unless ( !$verbose );
+        print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n"                         unless ( !$verbose );
+        arping_check( $device, $nicIP );
 
-            if ( $device eq "eth0" and $nicIP eq "" ) {
-                push(
-                    @WARNINGS,
-                    "Device eth0 has no address - Seeing Waiting for devices to settle errors in license_log?"
-                );
-            }
-            if ( $device eq $DEVinConf ) {
-                $inConf = 1;
-            }
-            check_for_dhcp($device);
+        if ( $device eq "eth0" and $nicIP eq "" ) {
+            push( @WARNINGS, "Device eth0 has no address - Seeing Waiting for devices to settle errors in license_log?" );
         }
+        if ( $device eq $DEVinConf ) {
+            $inConf = 1;
+        }
+        check_for_dhcp($device);
     }
     if ( $inConf = 0 || $DEVinConf eq "" ) {
         push(
@@ -685,6 +688,8 @@ sub get_devices {
 }
 
 sub arping_check {
+    return if ( !-x '/usr/bin/arping' );     ## Ubuntu
+    return if ( !-x '/usr/sbin/arping' );    ## All others
     my $nicdevice = shift;
     my $nicIPAddr = shift;
     return if ( $envtype eq "virtuozzo" );
@@ -742,23 +747,17 @@ sub check_for_dhcp {
 
     my $nicdevice = shift;
     print_working("Checking Networking Configs For DHCP:") unless ( !$verbose );
-    my $grep4dhcp = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-i', "dhcp", "/etc/sysconfig/network-scripts/ifcfg-$nicdevice" );
-    my $Look4NM   = qx[ ps faux | grep 'NetworkManager' | grep -v grep ];                                                                 ## no critic (Cpanel::ProhibitQxAndBackticks)
+    my $grep4dhcp;
+    $grep4dhcp = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-i', "dhcp", "/etc/sysconfig/network-scripts/ifcfg-$nicdevice" ) unless ( $distro eq 'ubuntu' );
     if ($grep4dhcp) {
-        print RED "\t\\_ NIC Device " . $nicdevice . " set for DHCP.\n"
-          unless ( !$verbose );
-        push(
-            @WARNINGS,
-            "NIC Device " . $nicdevice . " has DHCP config. May cause automatic IP/Hostname changes."
-        );
+        print RED "\t\\_ NIC Device " . $nicdevice . " set for DHCP.\n" unless ( !$verbose );
+        push( @WARNINGS, "NIC Device " . $nicdevice . " has DHCP config. May cause automatic IP/Hostname changes." );
     }
-    if ($Look4NM) {
-        print RED "\t\\_ NetworkManager process found.\n"
-          unless ( !$verbose );
-        push(
-            @WARNINGS,
-            "Found NetworkManager processes running. May cause automatic IP/Hostname changes.\n\t\t\\_ [ See: https://docs.cpanel.net/knowledge-base/general-systems-administration/how-to-disable-network-manager/ ]"
-        );
+    my $Look4NM = Cpanel::SafeRun::Timed::timedsaferun( 0, 'ps', 'faux' );
+    my @Look4NM = split /\n/, $Look4NM;
+    if ( grep { m/NetworkManager/ } @Look4NM ) {
+        print RED "\t\\_ NetworkManager process found.\n" unless ( !$verbose );
+        push( @WARNINGS, "Found NetworkManager processes running. May cause automatic IP/Hostname changes.\n\t\t\\_ [ See: https://docs.cpanel.net/knowledge-base/general-systems-administration/how-to-disable-network-manager/ ]" );
     }
     if ( !$grep4dhcp && !$Look4NM ) {
         print BOLD GREEN "\t \\_ None Found\n" unless ( !$verbose );
@@ -866,10 +865,10 @@ sub get_network_hostname {
 }
 
 sub get_ip_of_hostname {
-    my $HOSTNAME_IP = qx[ dig +tries=2 +time=5 \@208.67.222.222 $HOSTNAME +short | head -1 2>/dev/null ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
+    my ($HOSTNAME_IP) = ( split( /\s+/, Cpanel::SafeRun::Timed::timedsaferun( 4, '/usr/local/cpanel/3rdparty/sbin/unbound-host', '-4', '-t', 'A', $HOSTNAME ) ) )[3];
     chomp($HOSTNAME_IP);
     return if ( $HOSTNAME_IP eq "" );
-    my $IPValid = Cpanel::Validate::IP::is_valid_ip($HOSTNAME_IP);                                           ## no critic (ProhibitCallsToUnexportedSubs)
+    my $IPValid = Cpanel::Validate::IP::is_valid_ip($HOSTNAME_IP);    ## no critic (ProhibitCallsToUnexportedSubs)
     if ( !$IPValid ) {
         push( @WARNINGS, "Could not reverse $HOSTNAME to a valid IP address." );
     }
@@ -883,7 +882,7 @@ sub get_ip_of_hostname {
         );
     }
     if ($HOSTNAME_IP) {
-        my $REVERSED_IP = qx[ dig +tries=2 +time=5 \@208.67.220.220 -x $HOSTNAME_IP +short 2>/dev/null ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
+        my $REVERSED_IP = Cpanel::SafeRun::Timed::timedsaferun( 4, 'dig', '+tries=2', '+time=5', '-x', $HOSTNAME_IP, '+short' );
         chomp($REVERSED_IP);
         chop($REVERSED_IP);
         if ($REVERSED_IP) {
@@ -906,12 +905,13 @@ sub get_ip_of_hostname {
 }
 
 sub check_if_hostname_resolves_locally {
-    my $LOCAL_HOSTNAME_IP = qx[ dig \@$external_ip_address +tries=2 +time=5 $HOSTNAME +short | head -1 2>/dev/null ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
+    open( STDERR, '>', '/dev/null' );
+    my $LOCAL_HOSTNAME_IP = Cpanel::SafeRun::Timed::timedsaferun( 4, 'dig', "\@$external_ip_address", '+tries=2', '+time=5', $HOSTNAME, '+short' );
+    close(STDERR);
     chomp($LOCAL_HOSTNAME_IP);
     return if ( $LOCAL_HOSTNAME_IP eq "" );
-    print_working("Checking if $HOSTNAME resolves locally")
-      unless ( !$verbose );
-    my $IPValid = Cpanel::Validate::IP::is_valid_ip($LOCAL_HOSTNAME_IP);                                                 ## no critic (ProhibitCallsToUnexportedSubs)
+    print_working("Checking if $HOSTNAME resolves locally") unless ( !$verbose );
+    my $IPValid = Cpanel::Validate::IP::is_valid_ip($LOCAL_HOSTNAME_IP);    ## no critic (ProhibitCallsToUnexportedSubs)
     if ( !$IPValid ) {
         push( @WARNINGS, "Could not resolve $HOSTNAME locally" );
         print RED "\t \\_ No\n" unless ( !$verbose );
@@ -924,7 +924,9 @@ sub check_if_hostname_resolves_locally {
         }
         print_working("Checking if $LOCAL_HOSTNAME_IP reverses back to $HOSTNAME: ")
           unless ( !$verbose );
-        my $LOCAL_HOSTNAME_REVERSED = qx[ dig +tries=2 +time=5 -x $LOCAL_HOSTNAME_IP +short 2>/dev/null ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
+        open( STDERR, '>', '/dev/null' );
+        my $LOCAL_HOSTNAME_REVERSED = Cpanel::SafeRun::Timed::timedsaferun( 4, 'dig', '+tries=2', '+time=5', '-x', $LOCAL_HOSTNAME_IP, '+short' );
+        close(STDERR);
         chomp($LOCAL_HOSTNAME_REVERSED);
         chop($LOCAL_HOSTNAME_REVERSED);
         if ( $LOCAL_HOSTNAME_REVERSED eq $HOSTNAME ) {
@@ -1136,20 +1138,15 @@ sub getGCE_IPs {
 
 sub getAWS_IPs {
     my $chkIP = shift;
+    my $aws_ip_range;
     chomp($chkIP);
-    my $AWSsubnets = Cpanel::SafeRun::Timed::timedsaferun( 0, 'curl', '-s', 'https://ip-ranges.amazonaws.com/ip-ranges.json' );
-    my @AWSsubnets = split /\n/, $AWSsubnets;
-    foreach my $awsline (@AWSsubnets) {
-        chomp($awsline);
-        next unless ( $awsline =~ m/ip_prefix/ );
-        my ($aws_ip_range) = ( split( /\s+/, $awsline ) )[2];
-        $aws_ip_range =~ s/\"//g;
-        $aws_ip_range =~ s/,//g;
+    my $AWSsubnetsraw = Cpanel::SafeRun::Timed::timedsaferun( 0, 'curl', '-s', 'https://ip-ranges.amazonaws.com/ip-ranges.json' );
+    my $output        = decode_json $AWSsubnetsraw;
+    for my $ip_prefixes ( @{ $output->{prefixes} } ) {
+        $aws_ip_range = $ip_prefixes->{ip_prefix};
         my $network = NetAddr::IP->new($aws_ip_range);
         my $ip      = NetAddr::IP->new($chkIP);
-        if ( $ip->within($network) ) {
-            return 1;
-        }
+        return 1 if ( $ip->within($network) );
     }
 }
 
@@ -1359,7 +1356,7 @@ sub chk_fwdip {
     foreach my $fwdip (@FWDIP) {
         chomp($fwdip);
         if ( $fwdip =~ m/208.74./ ) {
-            $L3 = 1;
+            $L3 = 1 unless ( !iam('cptech') );
             push(
                 @WARNINGS,
                 "Found $fwdip in /var/cpanel/domainfwdip file"
@@ -1380,7 +1377,7 @@ sub getHist {
         next unless ($match);
         if ($match) {
             push( @WARNINGS, "Found evidence related to CPANEL-22182 in /root history [$lookfor]" ) unless ( !iam('cptech') || ($L3) );
-            $L3 = 1;
+            $L3 = 1                                                                                 unless ( !iam('cptech') );
         }
     }
 }
@@ -1395,7 +1392,7 @@ sub chk_upcp_posthook {
             chomp($lookfor);
             if ( $match =~ /$lookfor/ ) {
                 push( @WARNINGS, "Found evidence related to CPANEL-22182 in the /usr/local/cpanel/scripts/postupcp hook" ) unless ( !iam('cptech') );
-                $L3 = 1;
+                $L3 = 1                                                                                                    unless ( !iam('cptech') );
                 last;
             }
         }
@@ -1411,7 +1408,7 @@ sub chk_etc_hosts {
         chomp($hostline);
         if ( $hostline =~ m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net/ ) {
             push( @WARNINGS, "Found $hostline in /etc/hosts" ) unless ( !iam('cptech') );
-            $L3 = 1;
+            $L3 = 1                                            unless ( !iam('cptech') );
         }
     }
     if ( -e "/etc/hosts.allow" ) {
@@ -1420,7 +1417,7 @@ sub chk_etc_hosts {
             chomp($_);
             if ( $_ =~ m/88.198.132.70|68.183.71.131|88.198.132.68/ ) {
                 push( @WARNINGS, "Found evidence related to CPANEL-22182 in /etc/hosts.allow" ) unless ( !iam('cptech') );
-                $L3 = 1;
+                $L3 = 1                                                                         unless ( !iam('cptech') );
                 last;
             }
         }
@@ -1433,9 +1430,9 @@ sub chk_mounts {
     my @liscMounted = split /\n/, $liscMounted;
     return unless (@liscMounted);
     foreach my $mount_line (@liscMounted) {
-        if ( $mount_line =~ m/lisc/ ) {
+        if ( $mount_line =~ m/cpanel.lisc/ ) {
             push( @WARNINGS, "cpanel.lisc possibly mounted" ) unless ( !iam('cptech') );
-            $L3 = 1;
+            $L3 = 1                                           unless ( !iam('cptech') );
         }
     }
 }
@@ -1450,7 +1447,7 @@ sub chk_etc_ips {
         }
         if ( $_ =~ m{^208\.74\.} ) {
             push( @WARNINGS, "Found cPanel IP's within /etc/ips file" ) unless ( !iam('cptech') );
-            $L3 = 1;
+            $L3 = 1                                                     unless ( !iam('cptech') );
         }
     }
     close($fh);
@@ -1466,7 +1463,10 @@ sub chk_cgls {
     my $statfile;
     foreach my $file (@files) {
         chomp($file);
-        my @statfile = qx[ stat $file 2>/dev/null ];                                                                                                                             ## no critic (Cpanel::ProhibitQxAndBackticks)
+        open( STDERR, '>', '/dev/null' );
+        my $statfile = Cpanel::SafeRun::Timed::timedsaferun( 3, 'stat', $file );
+        my @statfile = split /\n/, $statfile;
+        close(STDERR);
         if (@statfile) {
             foreach my $statfile2 (@statfile) {
                 chomp($statfile2);
@@ -1491,7 +1491,7 @@ sub chk_cgls {
         @shenaniganlist = @shenanigans;
     }
     if ( scalar(@shenaniganlist) > 0 ) {
-        $L3 = 1;
+        $L3 = 1 unless ( !iam('cptech') );
         push( @WARNINGS, "Found evidence related to CPANEL-22182" ) unless ( !iam('cptech') );
         push( @WARNINGS, "\t " . WHITE @shenaniganlist )            unless ( !iam('cptech') );
         $cgls = 1;
@@ -1500,8 +1500,8 @@ sub chk_cgls {
 
 sub chk_cgls2 {
     my $isASCII = Cpanel::SafeRun::Timed::timedsaferun( 5, 'file', '/usr/local/cpanel/cpkeyclt' );
-    return unless ( $isASCII =~ m/ASCII/ );
-    $L3 = 1;
+    return                                              unless ( $isASCII =~ m/ASCII/ );
+    $L3 = 1                                             unless ( !iam('cptech') );
     push( @WARNINGS, "Found evidence of CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
     $cgls = 1;
 }
@@ -1512,7 +1512,7 @@ sub chk_rclocal {
     while (<$fh>) {
         chomp($_);
         if ( $_ =~ m/cpkeyclt/ ) {
-            $L3 = 1;
+            $L3 = 1                                                                      unless ( !iam('cptech') );
             push( @WARNINGS, "Found evidence related to CPANEL-22182 in /etc/rc.local" ) unless ( !iam('cptech') );
         }
     }
@@ -1530,8 +1530,9 @@ sub check_csf_conf {
         while (<$fh>) {
             chomp($_);
             if ( $_ =~ m{CSP Licensing Servers|/usr/bin/cspfwd|/usr/bin/CSPUpdate} ) {
-                $L3 = 1;
+                $L3 = 1                                                                           unless ( !iam('cptech') );
                 push( @WARNINGS, "Found evidence related to CPANEL-22182 in /etc/csf directory" ) unless ( !iam('cptech') );
+                last;
             }
         }
         close($fh);
@@ -1675,7 +1676,7 @@ sub check_root_servers {
     my $ROOT_HOST = ".root-servers.net";
     foreach my $rootserver (@ROOT) {
         $rootserver = $rootserver . $ROOT_HOST;
-        my $GOOD = qx[ dig +tries=2 +time=5 $rootserver +short 2> /dev/null ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
+        my $GOOD = Cpanel::SafeRun::Timed::timedsaferun( 4, 'dig', '+tries=2', '+time=5', $rootserver, '+short' );
         if ($GOOD) {
             print_OK("\t \\_ $rootserver - Good!\n") unless ( !$verbose );
         }
@@ -1689,14 +1690,16 @@ sub check_root_servers {
 sub check_routing {
     return if ( !$verbose );
     print_working("Displaying IP routing info (if any)");
-    my @ROUTINGINFO = qx[ ip addr | grep 'inet ' 2> /dev/null ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
+    my $ROUTINGINFO = Cpanel::SafeRun::Timed::timedsaferun( 4, 'ip', 'addr' );
+    my @ROUTINGINFO = split /\n/, $ROUTINGINFO;
     foreach my $routeline (@ROUTINGINFO) {
         chomp($routeline);
+        next unless ( $routeline =~ m{inet } );
+        next if ( $routeline =~ m{127.0.0.1} );
         my ($internal1) = ( split( /\s+/, $routeline ) )[2];
         my ($internal)  = ( split( /\//,  $internal1 ) )[0];
-        if ( $internal eq "127.0.0.1" ) { next; }
         print BOLD MAGENTA ON_BLACK . "\t \\_ Internal: " . CYAN $internal;
-        my $external = qx[ wget -O - -q --tries=1 --timeout=2 --bind-address=$internal http://myip.cpanel.net/v1.0/ 2> /dev/null ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
+        my $external = get_external_ip();
         if ($external) {
             chomp($external);
             print BOLD MAGENTA ON_BLACK " / External: " . CYAN $external . "\n";
@@ -1710,8 +1713,11 @@ sub check_routing {
 sub check_auth_cpanel_resolution {
     print_working("Checking to see if auth.cpanel.net can resolve: ")
       unless ( !$verbose );
-    my @AUTH_RESOLUTION = qx[ dig +tries=2 +time=5 auth.cpanel.net +short 2>/dev/null ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
-    my $cnt             = @AUTH_RESOLUTION;
+    open( STDERR, '>', '/dev/null' );
+    my $AUTH_RESOLUTION = Cpanel::SafeRun::Timed::timedsaferun( 5, 'dig', '+tries=2', '+time=5', 'auth.cpanel.net', '+short' );
+    my @AUTH_RESOLUTION = split /\n/, $AUTH_RESOLUTION;
+    close(STDERR);
+    my $cnt = @AUTH_RESOLUTION;
     if ( $cnt == 0 ) {
         print RED "\t\\_ Failed!\n" unless ( !$verbose );
         push(
@@ -1767,7 +1773,7 @@ sub check_iptables {
         if ( $ip_rule =~ m/REDIRECT|REDSOCKS/ && $ip_rule =~ m/2089|208.74.120./ ) {
             print RED "\t\\_ Found a proxy redirect via IPTABLES (nat)\n"  unless ( !$verbose && i_am('cptech') );
             push( @WARNINGS, "Found a proxy redirect via IPTABLES (nat)" ) unless ( i_am('cptech') );
-            $L3 = 1;
+            $L3 = 1                                                        unless ( !iam('cptech') );
         }
     }
 }
@@ -1835,7 +1841,7 @@ sub check_cpanel_lisc_file {
 
     my $attr = Cpanel::SafeRun::Timed::timedsaferun( 4, '/usr/bin/lsattr', "$cPLiscFile" );
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
-        $L3 = 1;
+        $L3 = 1                                       unless ( !iam('cptech') );
         push( @WARNINGS, "$cPLiscFile is immutable" ) unless ( !iam('cptech') );
     }
     print_working("Checking if cpanel.lisc can be locked: ") unless ( !$verbose );
@@ -1844,8 +1850,8 @@ sub check_cpanel_lisc_file {
         print BOLD GREEN "\t\\_ Yes\n" unless ( !$verbose );
     }
     else {
-        print RED "\t\\_ No\n" unless ( !$verbose );
-        $L3 = 1;
+        print RED "\t\\_ No\n"                                    unless ( !$verbose );
+        $L3 = 1                                                   unless ( !iam('cptech') );
         push( @WARNINGS, "Could not obtain lock on $cPLiscFile" ) unless ( !iam('cptech') );
     }
 }
@@ -1918,7 +1924,7 @@ sub get_cpsrvd_restarts {
               unless ( $histline =~ m/grep/ );
         }
         if ( $histline =~ m/cgls/ ) {
-            $L3 = 1;
+            $L3 = 1                                                     unless ( !iam('cptech') );
             push( @WARNINGS, "Found evidence related to CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
             $cgls = 1;
         }
@@ -2126,26 +2132,30 @@ sub proxy_chk {
     foreach my $port (@ports2chk) {
         $is_listening = Cpanel::SafeRun::Timed::timedsaferun( 6, 'lsof', "-itcp:$port" );
         if ($is_listening) {
-            $L3 = 1;
+            $L3 = 1                                                            unless ( !iam('cptech') );
             push( @WARNINGS, "Possible proxy found listening on port: $port" ) unless ( !iam('cptech') );
         }
     }
     if ( -d "/root/pc4" ) {
         if ( -e "/root/pc4/libproxychains4.so" or -e "/root/pc4/proxychains4" or -e "/root/pc4/cpsys2.conf" or -e "/root/pc4/proxychains-ng-master" ) {
-            $L3 = 1;
+            $L3 = 1                                                              unless ( !iam('cptech') );
             push( @WARNINGS, "Possible proxy found /root/pc4 directory exists" ) unless ( !iam('cptech') );
         }
     }
     if ( -d "/root/redsocks" ) {
-        $L3 = 1;
+        $L3 = 1                                                                   unless ( !iam('cptech') );
         push( @WARNINGS, "Possible proxy found /root/redsocks directory exists" ) unless ( !iam('cptech') );
     }
     return if ( !-e "/usr/bin/traceroute" );
     return if ( !$trCheck );
-    my $troute = qx[ traceroute -T -p 2089 auth.cpanel.net 2>/dev/null | grep -v 'traceroute to' | wc -l ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
+    open( STDERR, '>', '/dev/null' );
+    my $troute = Cpanel::SafeRun::Timed::timedsaferun( 0, 'traceroute', '-T', '-p', '2089', 'auth.cpanel.net' );
+    close(STDERR);
+    my @troute = split /\n/, $troute;
+    my $cnt    = @troute;
 
-    if ( $troute < 3 ) {
-        $L3 = 1;
+    if ( $cnt < 3 ) {
+        $L3 = 1                                                       unless ( !iam('cptech') );
         push( @WARNINGS, "Possible proxy found - (traceroute test)" ) unless ( !iam('cptech') );
     }
 }
@@ -2201,7 +2211,7 @@ sub get_whmapi1 {    ## no critic (RequireArgUnpacking)
 sub chk_cgls3 {
     my $attr = Cpanel::SafeRun::Timed::timedsaferun( 5, '/usr/bin/lsattr', '/usr/local/cpanel/cpkeyclt' );
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
-        $L3 = 1;
+        $L3 = 1 unless ( !iam('cptech') );
         push( @WARNINGS, "Found evidence related to CPANEL-22182." )                        unless ( $cgls || !iam('cptech') );
         push( @WARNINGS, "\t/usr/local/cpanel/cpkeyclt is set to [IMMUTABLE/APPEND-ONLY]" ) unless ( $cgls || !iam('cptech') );
         $cgls = 1;
@@ -2236,7 +2246,7 @@ sub check_for_license_status_json {
         # All other codes (other than 200 or 600)
         print_working( 'Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
         push( @WARNINGS, "Last cpkeyclt check: (" . $licstatus->{code} . ") " . $licstatus->{message} );
-        $L3 = 1;
+        $L3 = 1 unless ( !iam('cptech') );
     }
     return;
 }
