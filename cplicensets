@@ -555,22 +555,19 @@ sub get_ipinfo {
     my @IPINFO = split /\n/, $ipinfo;
     foreach my $ipinfoline (@IPINFO) {
         chomp($ipinfoline);
-        next if ( $ipinfoline =~ m/status|continentCode|countryCode|region|district|currency|mobile|proxy|query|asname|hosting|offset/ );
-        if ( $ipinfoline =~ m/{|}/ ) {
-            next;
-        }
-        $ipinfoline =~ s/\"//g;
+        next if ( $ipinfoline =~ m/status|continentCode|countryCode|region|district|currency|mobile|proxy|query|asname|hosting|offset|{|}/ );
         $ipinfoline =~ s/,$//g;
-        $ipinfoline =~ s/as/AS-Name    /;
-        $ipinfoline =~ s/org/Organization/;
-        $ipinfoline =~ s/isp/ISP         /;
-        $ipinfoline =~ s/timezone/TimeZone         /;
-        $ipinfoline =~ s/lat/Latitude    /;
-        $ipinfoline =~ s/lon/Longitude   /;
-        $ipinfoline =~ s/zip/Postal      /;
-        $ipinfoline =~ s/city/City         /;
-        $ipinfoline =~ s/country/Country         /;
-        $ipinfoline =~ s/continent/Continent         /;
+        $ipinfoline =~ s/\"as\"/AS-Name    /;
+        $ipinfoline =~ s/\"org\"/Organization/;
+        $ipinfoline =~ s/\"isp\"/ISP         /;
+        $ipinfoline =~ s/\"timezone\"/TimeZone         /;
+        $ipinfoline =~ s/\"lat\"/Latitude    /;
+        $ipinfoline =~ s/\"lon\"/Longitude   /;
+        $ipinfoline =~ s/\"zip\"/Postal      /;
+        $ipinfoline =~ s/\"city\"/City         /;
+        $ipinfoline =~ s/\"country\"/Country         /;
+        $ipinfoline =~ s/\"continent\"/Continent         /;
+        $ipinfoline =~ s/\"//g;
         print BOLD CYAN "\t\\_$ipinfoline\n";
     }
 }
