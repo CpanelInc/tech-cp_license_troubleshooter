@@ -36,11 +36,10 @@
 use strict;
 use warnings;
 
-my $version = "2.0.43";
+my $version = "2.0.44";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
-our $verify_license_raw;
 our $verify_license_data;
 our $L3 = 0;
 our $CS = 0;
@@ -91,16 +90,16 @@ if ( -e '/usr/local/cpanel/Cpanel/OS.pm' ) {
     if ( Cpanel::OS->can('instance') ) {
 
         # 96 and 98
-        $distro       = Cpanel::OS->instance->distro;
-        $distro_major = Cpanel::OS->instance->major;
-        $distro_minor = Cpanel::OS->instance->minor;
+        $distro       = Cpanel::OS->instance->distro;    ## no critic (Cpanel::CpanelOS)
+        $distro_major = Cpanel::OS->instance->major;     ## no critic (Cpanel::CpanelOS)
+        $distro_minor = Cpanel::OS->instance->minor;     ## no critic (Cpanel::CpanelOS)
     }
     elsif ( Cpanel::OS->can('supported_methods') ) {
 
         # 100+
-        $distro       = Cpanel::OS->_instance->distro;
-        $distro_major = Cpanel::OS->_instance->major;
-        $distro_minor = Cpanel::OS->_instance->minor;
+        $distro       = Cpanel::OS->_instance->distro;    ## no critic (Cpanel::CpanelOS)
+        $distro_major = Cpanel::OS->_instance->major;     ## no critic (Cpanel::CpanelOS)
+        $distro_minor = Cpanel::OS->_instance->minor;     ## no critic (Cpanel::CpanelOS)
     }
     $distro_version = $distro_major . "." . $distro_minor;
 }
@@ -426,7 +425,6 @@ sub check_valid_products {
 
 sub get_license_data {
     my $tcIPAddress = shift;
-    $verify_license_raw  = Cpanel::SafeRun::Timed::timedsaferun( 5, 'curl', '-s', "https://verify.cpanel.net/api/ipaddrs?ip=$tcIPAddress" );
     $verify_license_data = Cpanel::Verify::get_licenses($tcIPAddress);
 }
 
@@ -1367,44 +1365,44 @@ sub chk_fwdip {
 
 sub getHist {
     my @lookfor = (
-        'lic.bigconfig.com', 
-        'cpsanitycheck.so', 
-        'sectools', 
-        '3jenan', 
-        'secinstall', 
-        'update_cpanelv2', 
-        'license.onlinelic.net', 
+        'lic.bigconfig.com',
+        'cpsanitycheck.so',
+        'sectools',
+        '3jenan',
+        'secinstall',
+        'update_cpanelv2',
+        'license.onlinelic.net',
         '\./s.sh',
         'tsocks',
-        'yoncu.com', 
-        'resellercenter.ir', 
-        'add blackhole 208\.74\.', 
-        'Lisans -Zorla', 
-        'Lisans -Guncelle', 
-        'Lisans -Kaldır', 
-        'Lisans -Pasif', 
-        'Lisans -Aktif', 
-        'Lisans -5min', 
-        'sistem/Kurulum', 
-        'buylicense.software', 
-        'cyberlic', 
-        'asanlicense.ir', 
-        'lisanstr.com', 
-        'license.licensemaker.com', 
-        'up.ehabdiab.com', 
-        'license.tqniait.com', 
-        'incognito.warezservers.com', 
-        'hostingmango.com', 
-        'licensehosts.com', 
-        'license.promohosts.com', 
-        'PhLicenseCP', 
-        'cheapcpanel.net', 
-        'remove_reseller.sh', 
-        'licenseman.net', 
-        'licensefarm.com', 
-        'licenseportal.in', 
-        'solicense.com', 
-        'licensepanel.io', 
+        'yoncu.com',
+        'resellercenter.ir',
+        'add blackhole 208\.74\.',
+        'Lisans -Zorla',
+        'Lisans -Guncelle',
+        'Lisans -Kaldır',
+        'Lisans -Pasif',
+        'Lisans -Aktif',
+        'Lisans -5min',
+        'sistem/Kurulum',
+        'buylicense.software',
+        'cyberlic',
+        'asanlicense.ir',
+        'lisanstr.com',
+        'license.licensemaker.com',
+        'up.ehabdiab.com',
+        'license.tqniait.com',
+        'incognito.warezservers.com',
+        'hostingmango.com',
+        'licensehosts.com',
+        'license.promohosts.com',
+        'PhLicenseCP',
+        'cheapcpanel.net',
+        'remove_reseller.sh',
+        'licenseman.net',
+        'licensefarm.com',
+        'licenseportal.in',
+        'solicense.com',
+        'licensepanel.io',
         'cpanel -D',
         'licensedl.com'
     );
