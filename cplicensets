@@ -1404,7 +1404,8 @@ sub getHist {
         'solicense.com',
         'licensepanel.io',
         'cpanel -D',
-        'licensedl.com'
+        'licensedl.com',
+        'license.cc-get.com'
     );
     foreach my $lookfor (@lookfor) {
         chomp($lookfor);
