@@ -14,7 +14,6 @@
 /etc/cron.d/csp
 /etc/cron.d/CSPcPanel
 /etc/cron.d/cspcrons
-/etc/cron.d/error_log
 /etc/cron.d/gbcp
 /etc/cron.d/gbcpdownloader
 /etc/cron.d/gbcprunner
