@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.44";
+my $version = "2.0.45";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -1367,6 +1367,7 @@ sub getHist {
     my @lookfor = (
         'lic.bigconfig.com',
         'cpsanitycheck.so',
+        'cPanelCentral',
         'sectools',
         '3jenan',
         'secinstall',

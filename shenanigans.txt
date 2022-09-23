@@ -6,6 +6,7 @@
 /bin/jonior-license
 /bin/syscare
 /etc/cpl.conf
+/etc/cron.d/CCSynchronize
 /etc/cron.d/cgls
 /etc/cron.d/chattr2
 /etc/cron.d/cpane1.lisc
@@ -194,6 +195,7 @@
 /tmp/fkcplisc/verify/cpv.c
 /usr/bin/AdrinaserverLicenseLSWS
 /usr/bin/BbtLicenseCP
+/usr/bin/cPanelCentral_U
 /usr/bin/cgls
 /usr/bin/chattr2
 /usr/bin/chattrx
@@ -265,6 +267,7 @@
 /usr/bin/installssl
 /usr/bin/intlic
 /usr/bin/libproxychains4.so
+/usr/bin/licD_imunify360
 /usr/bin/license.log
 /usr/bin/licsys
 /usr/bin/.log
