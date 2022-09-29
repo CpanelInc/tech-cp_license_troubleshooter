@@ -451,6 +451,17 @@
 /usr/local/cpanel/sed*
 /usr/local/cpanel/.uapi
 /usr/local/cpanel/uapi_rc
+/usr/local/cpanel/whostmgr/bin/.whostmgr
+/usr/local/cpanel/whostmgr/bin/.whostmgr10
+/usr/local/cpanel/whostmgr/bin/.whostmgr11
+/usr/local/cpanel/whostmgr/bin/.whostmgr12
+/usr/local/cpanel/whostmgr/bin/.whostmgr2
+/usr/local/cpanel/whostmgr/bin/.whostmgr4
+/usr/local/cpanel/whostmgr/bin/.whostmgr5
+/usr/local/cpanel/whostmgr/bin/.whostmgr6
+/usr/local/cpanel/whostmgr/bin/.whostmgr7
+/usr/local/cpanel/whostmgr/bin/.whostmgr9
+/usr/local/cpanel/whostmgr/bin/.xml-api
 /usr/local/cpanel/whostmgr/bin/.ecpwhostmgr
 /usr/local/cpanel/whostmgr/bin/.ecpwhostmgr10
 /usr/local/cpanel/whostmgr/bin/.ecpwhostmgr11

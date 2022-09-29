@@ -1943,20 +1943,25 @@ sub get_cpsrvd_restarts {
         $cnt++;
     }
     print_working("Checking /root/.bash_history for restarts:");
+    my $found=0;
     foreach my $histline (@HISTORY) {
         chomp($histline);
-        if (   $histline =~ m/cpanel.service/
+        if (   $histline =~ m/cpanel\.service/
             or $histline =~ m/scripts\/restartsrv_cpsrvd/
             or $histline =~ m/service cpanel restart/
             or $histline =~ m/etc\/init.d\/cpanel/ ) {
             print YELLOW "\t \\_ Found: " . BOLD GREEN $histline . "\n"
               unless ( $histline =~ m/grep/ );
+            $found=1;
         }
         if ( $histline =~ m/cgls/ ) {
             $L3 = 1;
             push( @WARNINGS, "Found evidence related to CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
             $cgls = 1;
         }
+    }
+    if ( $found == 0 ) {
+        print BOLD GREEN "\t \\_ None\n" unless ( !$verbose );
     }
 }
 
