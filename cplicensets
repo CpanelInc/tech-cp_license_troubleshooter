@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.45";
+my $version = "2.0.46";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -207,7 +207,7 @@ my $UserCnt = usercount();
 print_working( "Total Users: " . CYAN $UserCnt );
 my $ActiveProfileNode = "UNKNOWN";
 if ( -e "/usr/local/cpanel/cpanel.lisc" ) {
-    $ActiveProfileNode = getProfileNode();
+    $ActiveProfileNode = getProfileNode() // "UNKNOWN";
 }
 
 $AllowedCnt = 30 if ($Trial);
