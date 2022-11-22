@@ -141,7 +141,6 @@
 /root/.licensestatus2
 /root/llc
 /root/main_phpD.txt
-/root/ols1clk.sh
 /root/pc4/cgls
 /root/pc4/chattr2
 /root/pc4/cpane1.lisc
