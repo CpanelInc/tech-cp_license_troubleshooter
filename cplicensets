@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.46";
+my $version = "2.0.47";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -1344,6 +1344,7 @@ sub shenanigans {
     chk_rclocal();
     proxy_chk();
     check_csf_conf();
+    check_sources_pm();
 }
 
 sub chk_fwdip {
@@ -1416,6 +1417,27 @@ sub getHist {
         if ($match) {
             push( @WARNINGS, "Found evidence related to CPANEL-22182 in /root history [$lookfor]" ) unless ( !iam('cptech') || ($L3) );
             $L3 = 1;
+        }
+    }
+}
+
+sub check_sources_pm {
+    my $found = 0;
+    my @files=qw( /usr/local/cpanel/Cpanel/Security/Advisor/Assessors/Kernel.pm /usr/local/cpanel/Cpanel/Config/Sources.pm /usr/local/cpanel/Whostmgr/Store/Product/ImunifyAVPlus.pm /usr/local/cpanel/Whostmgr/Imunify360.pm );
+    for my $file(@files) {
+        next unless( -f $file );
+        open( my $fh, '<', $file );
+        while( <$fh> ) {
+            if ( $_ =~ m/csp.name/ && iam('cptech')) {
+                push( @WARNINGS, "Found evidence related to CPANEL-22182 in $file file" );
+                $L3 = 1;
+                $found = 1;
+                last;
+            }
+        }
+        close( $fh );
+        if ( $found ) {
+            return;
         }
     }
 }
