@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.48";
+my $version = "2.0.49";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -77,32 +77,32 @@ $Term::ANSIColor::AUTORESET = 1;
 local $| = 1;
 
 my ( $distro, $distro_version, $distro_major, $distro_minor );
-if ( -e '/usr/local/cpanel/Cpanel/Sys.pm' ) {
+#if ( -e '/usr/local/cpanel/Cpanel/Sys.pm' ) {
 
     # up to 94
-    eval("use Cpanel::Sys");        ## no critic (BuiltinFunctions::ProhibitStringyEval)
-    eval("use Cpanel::Sys::OS");    ## no critic (BuiltinFunctions::ProhibitStringyEval)
-    $distro         = Cpanel::Sys::OS::getos();
-    $distro_version = Cpanel::Sys::OS::getreleaseversion();
-}
-if ( -e '/usr/local/cpanel/Cpanel/OS.pm' ) {
+#    eval("use Cpanel::Sys");        ## no critic (BuiltinFunctions::ProhibitStringyEval)
+#    eval("use Cpanel::Sys::OS");    ## no critic (BuiltinFunctions::ProhibitStringyEval)
+#    $distro         = Cpanel::Sys::OS::getos();
+#    $distro_version = Cpanel::Sys::OS::getreleaseversion();
+#}
+#if ( -e '/usr/local/cpanel/Cpanel/OS.pm' ) {
 
-    if ( Cpanel::OS->can('instance') ) {
+#    if ( Cpanel::OS->can('instance') ) {
 
         # 96 and 98
-        $distro       = Cpanel::OS->instance->distro;    ## no critic (Cpanel::CpanelOS)
-        $distro_major = Cpanel::OS->instance->major;     ## no critic (Cpanel::CpanelOS)
-        $distro_minor = Cpanel::OS->instance->minor;     ## no critic (Cpanel::CpanelOS)
-    }
-    elsif ( Cpanel::OS->can('supported_methods') ) {
+#        $distro       = Cpanel::OS->instance->distro;    ## no critic (Cpanel::CpanelOS)
+#        $distro_major = Cpanel::OS->instance->major;     ## no critic (Cpanel::CpanelOS)
+#        $distro_minor = Cpanel::OS->instance->minor;     ## no critic (Cpanel::CpanelOS)
+#    }
+#    elsif ( Cpanel::OS->can('supported_methods') ) {
 
         # 100+
         $distro       = Cpanel::OS->_instance->distro;    ## no critic (Cpanel::CpanelOS)
         $distro_major = Cpanel::OS->_instance->major;     ## no critic (Cpanel::CpanelOS)
         $distro_minor = Cpanel::OS->_instance->minor;     ## no critic (Cpanel::CpanelOS)
-    }
+#    }
     $distro_version = $distro_major . "." . $distro_minor;
-}
+#}
 
 _init_run_state();
 
@@ -634,48 +634,31 @@ sub get_devices {
         if ( $device =~ m/\@/ ) {
             ($device) = ( split( /\@/, $device ) )[0];
         }
-        if ( -e ("/etc/sysconfig/network-scripts/ifcfg-$device") ) {
-            my $if = IO::Interface::Simple->new($device);
-            $nicIP = $if->address;
-            print BOLD MAGENTA ON_BLACK . "\t \\_ Ethernet Device Name: " . CYAN $device . "\n"
-              unless ( !$verbose );
-            print BOLD YELLOW . "\t\t \\_ Address: " . CYAN $nicIP . "\n"
-              unless ( !$verbose );
-            my $MACVendor = getMAC( $if->hwaddr );
-            print BOLD YELLOW . "\t\t \\_ MAC: " . CYAN $if->hwaddr . " [" . $MACVendor . "]\n"
-              unless ( !$verbose );
-            print BOLD YELLOW . "\t\t \\_ Broadcast: " . CYAN $if->broadcast . "\n"
-              unless ( !$verbose );
-            print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n"
-              unless ( !$verbose );
-            print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n"
-              unless ( !$verbose );
-            arping_check( $device, $nicIP );
+        my $if = IO::Interface::Simple->new($device);
+        $nicIP = $if->address;
+        print BOLD MAGENTA ON_BLACK . "\t \\_ Ethernet Device Name: " . CYAN $device . "\n" unless ( !$verbose );
+        print BOLD YELLOW . "\t\t \\_ Address: " . CYAN $nicIP . "\n" unless ( !$verbose );
+        my $MACVendor = getMAC( $if->hwaddr );
+        print BOLD YELLOW . "\t\t \\_ MAC: " . CYAN $if->hwaddr . " [" . $MACVendor . "]\n" unless ( !$verbose );
+        print BOLD YELLOW . "\t\t \\_ Broadcast: " . CYAN $if->broadcast . "\n" unless ( !$verbose );
+        print BOLD YELLOW . "\t\t \\_ Netmask: " . CYAN $if->netmask . "\n" unless ( !$verbose );
+        print BOLD YELLOW . "\t\t \\_ MTU: " . CYAN $if->mtu . "\n" unless ( !$verbose );
+        arping_check( $device, $nicIP );
 
-            if ( $device eq "eth0" and $nicIP eq "" ) {
-                push(
-                    @WARNINGS,
-                    "Device eth0 has no address - Seeing Waiting for devices to settle errors in license_log?"
-                );
-            }
-            if ( $device eq $DEVinConf ) {
-                $inConf = 1;
-            }
-            check_for_dhcp($device);
+        if ( $device eq "eth0" and $nicIP eq "" ) {
+            push( @WARNINGS, "Device eth0 has no address - Seeing Waiting for devices to settle errors in license_log?");
         }
+        if ( $device eq $DEVinConf ) {
+            $inConf = 1;
+        }
+        check_for_dhcp($device) unless( $distro eq 'ubuntu' );
     }
     if ( $inConf = 0 || $DEVinConf eq "" ) {
-        push(
-            @WARNINGS,
-            RED "ETHDEV in /etc/wwwacct.conf (" . WHITE $DEVinConf . RED ") missing or undefined (blank) as an active device!\n\t\t \\_ Should be set to " . CYAN . $device
-        ) unless ( $DEVinConf eq $device );
+        push( @WARNINGS, RED "ETHDEV in /etc/wwwacct.conf (" . WHITE $DEVinConf . RED ") missing or undefined (blank) as an active device!\n\t\t \\_ Should be set to " . CYAN . $device) unless ( $DEVinConf eq $device );
     }
     my $ETHDEVcnt = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', 'ETHDEV', "/etc/wwwacct.conf" );
     if ( $ETHDEVcnt > 1 ) {
-        push(
-            @WARNINGS,
-            RED "Multiple ETHDEV lines found in /etc/wwwacct.conf!"
-        );
+        push( @WARNINGS, RED "Multiple ETHDEV lines found in /etc/wwwacct.conf!");
     }
 }
 
@@ -2215,6 +2198,7 @@ sub proxy_chk {
 sub chk_for_cloud_ready {
     return if ( -e "/usr/local/cpanel/.cloud-ready" );
     my $messfile = ( $distro eq "ubuntu" ) ? "/var/log/kern.log" : "/var/log/messages";
+    return if (! -e $messfile );
     open( my $fh, '<', "$messfile" );
     while (<$fh>) {
         if ( $_ =~ m/rc.local/ && $_ =~ m/Unknown error/ ) {
