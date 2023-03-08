@@ -114,6 +114,7 @@
 /root/cgls
 /root/chattr2
 /root/cpane1.lisc
+/root/cpanel2.sh
 /root/cpanelmodule.php
 /root/cphostname
 /root/.cp.pid
@@ -366,6 +367,7 @@
 /usr/bin/update_whmsonic
 /usr/bin/XonLicenseCP
 /usr/bin/yasin
+/usr/lib/echain.so
 /usr/lib64/faketime/libfaketime.so.1
 /usr/local/cgls
 /usr/local/chattr2
