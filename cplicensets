@@ -1520,6 +1520,8 @@ sub chk_cgls {
             $ignoreHash = ignoreHashes($file) unless ($statfile);
             my $filetype = Cpanel::SafeRun::Timed::timedsaferun( 5, 'file', "$file" );
             next if ( $filetype =~ m/data/ && $file eq "/home/installer" );
+            next if ( $file eq '/root/installer.1' && -d '/var/cpanel/addons/SMTP2GO' );
+            next if ( $file eq '/root/installr.sh' && -d '/usr/local/cpanel/whostmgr/docroot/whmsonic/' && grep {  "WHMSonic Setup" } '/root/installr.sh' );
             push @shenanigans, "[" . $file . "] " unless ($ignoreHash);
         }
     }
