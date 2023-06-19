@@ -36,7 +36,7 @@
 use strict;
 use warnings;
 
-my $version = "2.0.49";
+my $version = "2.0.50";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -66,6 +66,7 @@ use Cpanel::Verify ();
 use NetAddr::IP;
 use Text::CSV;
 use Cpanel::OS;
+use Cpanel::FindBin                 ();
 use Cpanel::OSSys::Env;
 use Data::Dump::Streamer;
 use Cpanel::Usage ();
@@ -266,7 +267,7 @@ check_for_cpnat();
 check_routing();
 check_root_servers();
 check_auth_cpanel_resolution();
-check_iptables();
+check_firewall();
 check_other_ports();
 shenanigans();
 check_for_license_status_json();
@@ -526,8 +527,9 @@ sub get_mainip {
     chomp($mainip);
     if ($mainip) {
         print_OK( "\t\\_ " . $mainip . "\n" ) unless ( !$verbose );
-        my $isOnServer = qx[ ip addr show | grep $mainip ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
-        chomp($isOnServer);
+	#my $isOnServer = qx[ ip addr show | grep $mainip ];    ## no critic (Cpanel::ProhibitQxAndBackticks)
+        my $ipaddrshow = Cpanel::SafeRun::Timed::timedsaferun( 2, 'ip', 'addr','show' );
+	my $isOnServer = ( grep { /$mainip/ } $ipaddrshow );
         if ( !($isOnServer) ) {
             print RED "[WARN] /var/cpanel/mainip [$mainip] is not bound to this server.\n";
             print YELLOW "\t \\_ Might be fixed by running /usr/local/cpanel/scripts/mainipcheck\n";
@@ -594,7 +596,7 @@ sub get_logStats {
         my $trialCnt         = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "Already Used cPanel/WHM Trial License for this IP", "$license_log_file" );
         my $noValLic         = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "^No valid cPanel/WHM license found",                "$license_log_file" );
         my $noPaidLic        = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "^No Paid License for this server",                  "$license_log_file" );
-        my $TotTWRestarts    = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-c', "Restarting cpsrvd",                                 "/var/log/chkservd.log" );
+        my $TotTWRestarts    = Cpanel::SafeRun::Timed::timedsaferun( 6, 'grep', '-c', "Restarting cpsrvd", "/var/log/chkservd.log" );
         chomp($rootOwnedCnt);
         chomp($expireCnt);
         chomp($activeCnt);
@@ -1390,6 +1392,7 @@ sub getHist {
         'licensepanel.io',
         'cpanel -D',
         'licensedl.com',
+        'license.cheap',
         'license.cc-get.com'
     );
     foreach my $lookfor (@lookfor) {
@@ -1769,46 +1772,60 @@ sub check_auth_cpanel_resolution {
     }
 }
 
-sub check_iptables {
+sub check_firewall {
     print_working("Checking if cPanel IP's (208.74.x.x) are blocked") unless ( !$verbose );
+    my $has_nft = Cpanel::FindBin::findbin('nft');
     my $cpanel_auth_ips = Cpanel::SafeRun::Timed::timedsaferun( 6, 'dig', '+short', 'auth.cpanel.net' );
     my @cpanel_auth_ips = split /\n/, $cpanel_auth_ips;
-    my $iptables_rules  = Cpanel::SafeRun::Timed::timedsaferun( 0, 'iptables', '-L', '-n' );
-    my @iptables_rules  = split /\n/, $iptables_rules;
+    my $firewall_rules;
+    if ( $has_nft ) {
+        $firewall_rules  = Cpanel::SafeRun::Timed::timedsaferun( 0, 'nft', 'list', 'ruleset' );
+    }
+    else {
+        $firewall_rules  = Cpanel::SafeRun::Timed::timedsaferun( 0, 'iptables', '-L', '-n' );
+    }
+    my @firewall_rules  = split /\n/, $firewall_rules;
     my $ip_blocked      = 0;
     my $port_blocked    = 0;
     foreach my $cpanel_auth_ip (@cpanel_auth_ips) {
         chomp($cpanel_auth_ip);
-        foreach my $ip_rule (@iptables_rules) {
+        foreach my $ip_rule (@firewall_rules) {
             chomp($ip_rule);
-            if ( $ip_rule =~ m/$cpanel_auth_ip/ && $ip_rule =~ m/DROP/ ) {
+            if ( $ip_rule =~ m/$cpanel_auth_ip/ && $ip_rule =~ m/drop|reject|deny/i ) {
                 $ip_blocked = 1;
             }
-            if ( $ip_rule =~ m/2083|2082|2095|2096|2086|2087|2089/ && $ip_rule =~ m/DROP/ ) {
+            if ( $ip_rule =~ m/2083|2082|2095|2096|2086|2087|2089/ && $ip_rule =~ m/drop|reject|deny/i ) {
                 $port_blocked = 1;
             }
         }
     }
     if ($ip_blocked) {
-        print RED "\t\\_ cPanel IP's may be blocked via IPTABLES\n" unless ( !$verbose );
-        push( @WARNINGS, "cPanel IP's may be blocked via IPTABLES" );
+        print RED "\t\\_ cPanel IP's may be blocked via IPTABLES/NFT\n" unless ( !$verbose );
+        push( @WARNINGS, "cPanel IP's may be blocked via IPTABLES/NFT" );
     }
     else {
         print BOLD GREEN "\t\\_ Looks good!\n" unless ( !$verbose );
     }
     if ($port_blocked) {
-        print RED "\t\\_ Some cPanel ports may be blocked via IPTABLES\n" unless ( !$verbose );
-        push( @WARNINGS, "cPanel ports may be blocked via IPTABLES Can cause cpsrvd to restart too often!" );
+        print RED "\t\\_ Some cPanel ports may be blocked via IPTABLES/NFT\n" unless ( !$verbose );
+        push( @WARNINGS, "cPanel ports may be blocked via IPTABLES/NFT Can cause cpsrvd to restart too often!" );
     }
 
     # Check NAT table too
-    $iptables_rules = Cpanel::SafeRun::Timed::timedsaferun( 0, 'iptables', '-L', '-t', 'nat' );
-    @iptables_rules = split /\n/, $iptables_rules;
-    foreach my $ip_rule (@iptables_rules) {
+    my $firewall_nat_rules;
+    if ( $has_nft ) {
+        $firewall_nat_rules = Cpanel::SafeRun::Timed::timedsaferun( 0, 'nft', 'list', 'ruleset' );
+    }
+    else {
+        $firewall_nat_rules = Cpanel::SafeRun::Timed::timedsaferun( 0, 'iptables', '-L', '-t', 'nat' );
+    }
+    my @firewall_nat_rules = split /\n/, $firewall_nat_rules;
+    foreach my $ip_rule (@firewall_nat_rules) {
         chomp($ip_rule);
-        if ( $ip_rule =~ m/REDIRECT|REDSOCKS/ && $ip_rule =~ m/2089|208.74.120./ ) {
-            print RED "\t\\_ Found a proxy redirect via IPTABLES (nat)\n"  unless ( !$verbose && i_am('cptech') );
-            push( @WARNINGS, "Found a proxy redirect via IPTABLES (nat)" ) unless ( i_am('cptech') );
+        next unless( $ip_rule =~ m{type nat} );
+        if ( $ip_rule =~ m/REDIRECT|REDSOCKS/i && $ip_rule =~ m/2089|208.74.120./ ) {
+            print RED "\t\\_ Found a proxy redirect in the firewall (nat)\n"  unless ( !$verbose && i_am('cptech') );
+            push( @WARNINGS, "Found a proxy redirect in the firewall (nat)" ) unless ( i_am('cptech') );
             $L3 = 1;
         }
     }
@@ -2275,17 +2292,19 @@ sub check_for_license_status_json {
     }
     if ( $licstatus->{code} == 600 ) {
 
-        # Locked
-        print_working( 'Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
-        push( @WARNINGS, "Last cpkeyclt check: (" . $licstatus->{code} . ") " . $licstatus->{message} );
+        # Locked License - Send to CS during business hours.
+        $CS = 1;
+    }
+    if ( $licstatus->{code} == 666 ) {
+        # STANDARD (requires metal license not VPS license - Send to CS
         $CS = 1;
     }
     else {
         # All other codes (other than 200 or 600)
-        print_working( 'Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
-        push( @WARNINGS, "Last cpkeyclt check: (" . $licstatus->{code} . ") " . $licstatus->{message} );
         $L3 = 1;
     }
+    print_working( 'Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
+    push( @WARNINGS, "Last cpkeyclt check: (" . $licstatus->{code} . ") " . $licstatus->{message} );
     return;
 }
 
