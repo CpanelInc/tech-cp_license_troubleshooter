@@ -34,7 +34,6 @@
 # CURRENT MAINTAINER: Peter Elsner <peter.elsner@cpanel.net>
 
 use strict;
-use warnings;
 
 my $version = "2.0.50";
 our $maxGCE = 7;
@@ -328,6 +327,7 @@ sub module_sanity_check {
     if ($verbose) {
         print_working("\nChecking if required Perl Modules are installed:");
     }
+    local $@;
     foreach my $reqmod (@required_mods) {
         eval("use $reqmod");    ## no critic (ProhibitStringyEval)
         if ($@) {
@@ -426,8 +426,22 @@ sub check_valid_products {
 
 sub get_license_data {
     my $tcIPAddress = shift;
+    my $e; {
+        local $@;
+        eval(Cpanel::Verify::get_licenses($tcIPAddress));
+        $@ =~ /Failure to reach Verify service/ and $e = $@;
+        if ( defined $e ) {
+            $L3 = 1;
+            push( @WARNINGS, "Found evidence related to CPANEL-22182 Could not verify license!" ) unless ( !iam('cptech') );
+        }
+    }
     $verify_license_data = Cpanel::Verify::get_licenses($tcIPAddress);
 }
+
+#sub get_license_data {
+#    my $tcIPAddress = shift;
+#    $verify_license_data = Cpanel::Verify::get_licenses($tcIPAddress);
+#}
 
 sub is_hostname_fqdn {
     $HOSTNAME = get_hostname();
@@ -1314,6 +1328,15 @@ sub loadHistory {
     @HISTORY = <$fh>;
     close($fh);
     $histCnt = @HISTORY;
+    my $linecnt=0;
+    while( $linecnt < 20 ) {
+        $linecnt++;
+        if ( @HISTORY[$linecnt] =~ m{Still logged into remote} ) {
+            $L3 = 1;
+            push( @WARNINGS, "Found evidence related to CPANEL-22182 /root/.bash_history (within the first 20 lines) See CX-771" ) unless ( !iam('cptech') );
+            last;
+        }
+    }
 }
 
 sub shenanigans {
@@ -1622,6 +1645,10 @@ sub check_crons {
                     push( @WARNINGS, "Found cpkeyclt within the $cron_log_file file" );
                     $CronPositive = 1;
                     last;
+                }
+                if ( $_ =~ m/CSPUpdate/ ) {
+                    push( @WARNINGS, "Found evidence related to CPANEL-22182 in $cron_log_file file contains CSP" ) unless ( !iam('cptech') || ($L3) );
+                    $L3 = 1;
                 }
             }
             close($fh);
@@ -2285,13 +2312,8 @@ sub check_for_license_status_json {
     }
 
     return unless ( defined $licstatus->{code} );
-    if ( $licstatus->{code} == 200 ) {
-
-        # All good!
-        return;
-    }
+    return if ( $licstatus->{code} == 200 );
     if ( $licstatus->{code} == 600 ) {
-
         # Locked License - Send to CS during business hours.
         $CS = 1;
     }
@@ -2300,7 +2322,7 @@ sub check_for_license_status_json {
         $CS = 1;
     }
     else {
-        # All other codes (other than 200 or 600)
+        # All other codes (other than 200, 600 or 666)
         $L3 = 1;
     }
     print_working( 'Last cpkeyclt check: ' . BOLD RED "(" . $licstatus->{code} . ") " . $licstatus->{message} );
