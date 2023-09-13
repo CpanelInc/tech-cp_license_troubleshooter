@@ -18,6 +18,9 @@
 /etc/cron.d/gbcp
 /etc/cron.d/gbcpdownloader
 /etc/cron.d/gbcprunner
+/etc/cron.d/GSlicenseIM360
+/etc/cron.d/GSlicenseLS
+/etc/cron.d/GSlicenseSC
 /etc/cron.d/helpercln
 /etc/cron.d/ilcp
 /etc/cron.d/ills
@@ -222,6 +225,7 @@
 /usr/bin/GbCpanel
 /usr/bin/gbcpcontrol
 /usr/bin/gbcpcprunner
+/usr/bin/gblicensecpcheck
 /usr/bin/gbcpcronbackup
 /usr/bin/gbcpdownloader
 /usr/bin/gbcprunner
