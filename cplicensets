@@ -35,7 +35,7 @@
 
 use strict;
 
-my $version = "2.0.50";
+my $version = "2.0.51";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -1416,7 +1416,16 @@ sub getHist {
         'cpanel -D',
         'licensedl.com',
         'license.cheap',
-        'license.cc-get.com'
+        'license.cc-get.com',
+        'serverlicenses.com',
+        'license-monster',
+        'freshlicense.com',
+        'cheapcpanellicense.com',
+        'licenses.center',
+        'cpanelsave.com',
+        'cheap-cpanel.com',
+        'sharedlicense.com',
+        'licensemesh.com'
     );
     foreach my $lookfor (@lookfor) {
         chomp($lookfor);
