@@ -35,7 +35,7 @@
 
 use strict;
 
-my $version = "2.0.52";
+my $version = "2.0.53";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -394,7 +394,8 @@ sub verify_license {
     my $tcIPAddress = shift;
     my ( $tcPackage, $tcPartner, $tlisSolo );
     for my $licenseline ( @{ $verify_license_data->{current} } ) {
-        next unless ( $licenseline->{producttype} == 1 );
+	    #print "DEBUG: $licenseline->{producttype} - $licenseline->{package}\n";
+        next unless ( $licenseline->{producttype} == 1 || $licenseline->{producttype} == 1048576 );
         $tcPackage = $licenseline->{package};
         $tcPartner = $licenseline->{company};
     }
@@ -1049,8 +1050,14 @@ sub check_for_dhclient_exit_hook {
     foreach my $dhclient_exit_hook (@dhclient_exit_hooks) {
         chomp($dhclient_exit_hook);
         if ( $dhclient_exit_hook =~ m/hostname/i ) {
-            $zzzsethostname = ($dhclient_exit_hook) =~ m/\/zzz-set-hostname.sh/ ? 1 : 0;
-            $sethostname    = ($dhclient_exit_hook) =~ m/\/set-hostname.sh/     ? 1 : 0;
+			if ( $isGCE_IP ) {		## CX-880 - Google Cloud instances ignore .sh extension on dhclient-exit-hook scripts.
+            	$zzzsethostname = ($dhclient_exit_hook) =~ m/\/zzz-set-hostname/ ? 1 : 0;
+            	$sethostname    = ($dhclient_exit_hook) =~ m/\/set-hostname/     ? 1 : 0;
+			}
+			else {	
+            	$zzzsethostname = ($dhclient_exit_hook) =~ m/\/zzz-set-hostname.sh/ ? 1 : 0;
+            	$sethostname    = ($dhclient_exit_hook) =~ m/\/set-hostname.sh/     ? 1 : 0;
+			}
             open( my $fh, '<', "$dhclient_exit_hook" );
             while (<$fh>) {
                 chomp($_);
@@ -1397,6 +1404,10 @@ sub getHist {
         'buylicense.software',
         'cyberlic',
         'asanlicense.ir',
+        '/usr/local/csp',
+        '/usr/bin/update_cloudv2',
+        'update_cpanelv2',
+        'script.licensedl.com',
         'lisanstr.com',
         'license.licensemaker.com',
         'up.ehabdiab.com',
