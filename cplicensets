@@ -2342,7 +2342,7 @@ sub check_for_license_status_json {
         # Locked License - Send to CS during business hours.
         $CS = 1;
     }
-    if ( $licstatus->{code} == 666 ) {
+    elsif ( $licstatus->{code} == 666 ) {
         # STANDARD (requires metal license not VPS license - Send to CS
         $CS = 1;
     }
