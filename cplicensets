@@ -1403,6 +1403,7 @@ sub getHist {
         'sistem/Kurulum',
         'buylicense.software',
         'cyberlic',
+        'tactu_cpanel',
         'asanlicense.ir',
         '/usr/local/csp',
         '/usr/bin/update_cloudv2',
