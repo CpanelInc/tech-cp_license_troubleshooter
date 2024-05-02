@@ -1442,7 +1442,8 @@ sub getHist {
         'sharedlicense.com',
         'user.lic.click',
         'licensemonster.xyz',
-        'licensemesh.com'
+        'licensemesh.com',
+        'sharedlicensing.com'
     );
     foreach my $lookfor (@lookfor) {
         chomp($lookfor);
