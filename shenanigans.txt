@@ -6,6 +6,9 @@
 /bin/cplicense-64bit
 /bin/jonior-license
 /bin/syscare
+/etc/cpanelmod/.installed
+/etc/cpanelmod/diallicense
+/etc/cpanelmod/settings.php
 /etc/cpl.conf
 /etc/cron.d/CCSynchronize
 /etc/cron.d/CSPcPanel
@@ -216,6 +219,7 @@
 /usr/bin/HSLicenseCP
 /usr/bin/HostCartCP
 /usr/bin/HostCart_cpanel
+/usr/bin/RCUpdate
 /usr/bin/RCdaemon
 /usr/bin/RcCpanel
 /usr/bin/RcCpanelD
@@ -447,6 +451,7 @@
 /usr/local/cpanel/cpanelbk.lisc
 /usr/local/cpanel/cpanelmodule.php
 /usr/local/cpanel/cpkeyclt.license
+/usr/local/cpanel/cpkeyclt.locked
 /usr/local/cpanel/cpkeyclt.xz
 /usr/local/cpanel/cpkeyclt.xz.1
 /usr/local/cpanel/cpkeyclt.yedek

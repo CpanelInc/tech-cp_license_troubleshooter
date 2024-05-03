@@ -1391,6 +1391,7 @@ sub getHist {
         'license.onlinelic.net',
         '\./s.sh',
         'tsocks',
+        'fviatool',
         'yoncu.com',
         'resellercenter.ir',
         'add blackhole 208\.74\.',
@@ -1502,7 +1503,7 @@ sub chk_etc_hosts {
     close($fh);
     foreach my $hostline (@HOSTS) {
         chomp($hostline);
-        if ( $hostline =~ m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net/ ) {
+        if ( $hostline =~ m/auth.cpanel.net|auth2.cpanel.net|auth3.cpanel.net|dev.cpanel.net|license.cheap|resellercenter.ir/ ) {
             push( @WARNINGS, "Found $hostline in /etc/hosts" ) unless ( !iam('cptech') );
             $L3 = 1;
         }
