@@ -35,7 +35,7 @@
 
 use strict;
 
-my $version = "2.0.53";
+my $version = "2.0.54";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -59,6 +59,7 @@ use Cpanel::Validate::IP            ();
 use Cpanel::Config::LoadUserOwners  ();
 use Cpanel::Config::LoadUserDomains ();
 use Cpanel::SafeRun::Timed          ();
+use Cpanel::SafeRun::Errors();
 use Cpanel::JSON                    ();
 use JSON::MaybeXS qw(encode_json decode_json);
 use Cpanel::Verify ();
@@ -682,6 +683,7 @@ sub get_devices {
 sub arping_check {
     my $nicdevice = shift;
     my $nicIPAddr = shift;
+    return unless( Cpanel::FindBin::findbin('arping') );
     return if ( $envtype eq "virtuozzo" );
     return if ( $envtype eq "vzcontainer" );
     return if ( $nicIPAddr eq "" or $nicdevice eq "" );
@@ -691,7 +693,7 @@ sub arping_check {
 
     foreach my $arpinginfo (@ARPINGCMD) {
         chomp($arpinginfo);
-        if ( $arpinginfo =~ m/Received 0/ ) {
+        if ( $arpinginfo =~ m/Received 0|100% packet loss/ ) {
             print_working( "Checking $nicdevice for multiple devices responding to $nicIPAddr: " . GREEN . "None" ) unless ( !$verbose );
             $allgood = 1;
         }
@@ -1381,17 +1383,26 @@ sub chk_fwdip {
 
 sub getHist {
     my @lookfor = (
-        'lic.bigconfig.com',
+        'bigconfig.com',
         'cpsanitycheck.so',
         'cPanelCentral',
         'sectools',
         '3jenan',
         'secinstall',
         'update_cpanelv2',
-        'license.onlinelic.net',
+        'onlinelic.net',
         '\./s.sh',
         'tsocks',
         'fviatool',
+        'time4vps.com',
+        'sosaystartcom',
+        'licenseboy.com',
+        'licensehost.net',
+        'licenseall.org',
+        'highhosters.net',
+        'cplicenses.com',
+        'licensepro.net',
+        'label-whoite.com',
         'yoncu.com',
         'resellercenter.ir',
         'add blackhole 208\.74\.',
@@ -1409,15 +1420,18 @@ sub getHist {
         '/usr/local/csp',
         '/usr/bin/update_cloudv2',
         'update_cpanelv2',
-        'script.licensedl.com',
+        'licensedl.com',
         'lisanstr.com',
-        'license.licensemaker.com',
-        'up.ehabdiab.com',
-        'license.tqniait.com',
-        'incognito.warezservers.com',
+        'licensemaker.com',
+        'securecpanel.net',
+        'tikweb.ir',
+        'ehabdiab.com',
+        'tqniait.com',
+        'warezservers.com',
         'hostingmango.com',
         'licensehosts.com',
-        'license.promohosts.com',
+        'easyconfig.net',
+        'promohosts.com',
         'PhLicenseCP',
         'cheapcpanel.net',
         'remove_reseller.sh',
@@ -1432,8 +1446,10 @@ sub getHist {
         'cpanel -D',
         'licensedl.com',
         'license.cheap',
-        'license.cc-get.com',
+        'cc-get.com',
+        'licenseweez.com',
         'serverlicenses.com',
+        'regularhost.com',
         'license-monster',
         'freshlicense.com',
         'cheapcpanellicense.com',
@@ -1441,10 +1457,12 @@ sub getHist {
         'cpanelsave.com',
         'cheap-cpanel.com',
         'sharedlicense.com',
-        'user.lic.click',
+        'lic.click',
         'licensemonster.xyz',
         'licensemesh.com',
-        'sharedlicensing.com'
+        'sharedlicensecp.com',
+        'sharedlicenses.com',
+        'sharedlicensing.com',
     );
     foreach my $lookfor (@lookfor) {
         chomp($lookfor);
@@ -1834,10 +1852,12 @@ sub check_firewall {
     my @cpanel_auth_ips = split /\n/, $cpanel_auth_ips;
     my $firewall_rules;
     if ( $has_nft ) {
-        $firewall_rules  = Cpanel::SafeRun::Timed::timedsaferun( 0, 'nft', 'list', 'ruleset' );
+        #$firewall_rules  = Cpanel::SafeRun::Timed::timedsaferun( 0, 'nft', 'list', 'ruleset' );
+        $firewall_rules  = Cpanel::SafeRun::Errors::saferunnoerror( 0, 'nft', 'list', 'ruleset' );
     }
     else {
-        $firewall_rules  = Cpanel::SafeRun::Timed::timedsaferun( 0, 'iptables', '-L', '-n' );
+        #$firewall_rules  = Cpanel::SafeRun::Timed::timedsaferun( 0, 'iptables', '-L', '-n' );
+        $firewall_rules  = Cpanel::SafeRun::Errors::saferunnoerror( 0, 'iptables', '-L', '-n' );
     }
     my @firewall_rules  = split /\n/, $firewall_rules;
     my $ip_blocked      = 0;
@@ -1869,10 +1889,12 @@ sub check_firewall {
     # Check NAT table too
     my $firewall_nat_rules;
     if ( $has_nft ) {
-        $firewall_nat_rules = Cpanel::SafeRun::Timed::timedsaferun( 0, 'nft', 'list', 'ruleset' );
+        #$firewall_nat_rules = Cpanel::SafeRun::Timed::timedsaferun( 0, 'nft', 'list', 'ruleset' );
+        $firewall_nat_rules = Cpanel::SafeRun::Errors::saferunnoerror( 0, 'nft', 'list', 'ruleset' );
     }
     else {
-        $firewall_nat_rules = Cpanel::SafeRun::Timed::timedsaferun( 0, 'iptables', '-L', '-t', 'nat' );
+        #$firewall_nat_rules = Cpanel::SafeRun::Timed::timedsaferun( 0, 'iptables', '-L', '-t', 'nat' );
+        $firewall_nat_rules = Cpanel::SafeRun::Errors::saferunnoerror( 0, 'iptables', '-L', '-t', 'nat' );
     }
     my @firewall_nat_rules = split /\n/, $firewall_nat_rules;
     foreach my $ip_rule (@firewall_nat_rules) {
