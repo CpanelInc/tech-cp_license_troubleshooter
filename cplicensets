@@ -77,33 +77,10 @@ use List::Util 'first';
 $Term::ANSIColor::AUTORESET = 1;
 local $| = 1;
 
-my ( $distro, $distro_version, $distro_major, $distro_minor );
-#if ( -e '/usr/local/cpanel/Cpanel/Sys.pm' ) {
-
-    # up to 94
-#    eval("use Cpanel::Sys");        ## no critic (BuiltinFunctions::ProhibitStringyEval)
-#    eval("use Cpanel::Sys::OS");    ## no critic (BuiltinFunctions::ProhibitStringyEval)
-#    $distro         = Cpanel::Sys::OS::getos();
-#    $distro_version = Cpanel::Sys::OS::getreleaseversion();
-#}
-#if ( -e '/usr/local/cpanel/Cpanel/OS.pm' ) {
-
-#    if ( Cpanel::OS->can('instance') ) {
-
-        # 96 and 98
-#        $distro       = Cpanel::OS->instance->distro;    ## no critic (Cpanel::CpanelOS)
-#        $distro_major = Cpanel::OS->instance->major;     ## no critic (Cpanel::CpanelOS)
-#        $distro_minor = Cpanel::OS->instance->minor;     ## no critic (Cpanel::CpanelOS)
-#    }
-#    elsif ( Cpanel::OS->can('supported_methods') ) {
-
-        # 100+
-        $distro       = Cpanel::OS->_instance->distro;    ## no critic (Cpanel::CpanelOS)
-        $distro_major = Cpanel::OS->_instance->major;     ## no critic (Cpanel::CpanelOS)
-        $distro_minor = Cpanel::OS->_instance->minor;     ## no critic (Cpanel::CpanelOS)
-#    }
-    $distro_version = $distro_major . "." . $distro_minor;
-#}
+my $distro       = Cpanel::OS->_instance->distro;    ## no critic (Cpanel::CpanelOS)
+my $distro_major = Cpanel::OS->_instance->major;     ## no critic (Cpanel::CpanelOS)
+my $distro_minor = Cpanel::OS->_instance->minor;     ## no critic (Cpanel::CpanelOS)
+my $distro_version = $distro_major . "." . $distro_minor;
 
 _init_run_state();
 
@@ -740,7 +717,10 @@ sub check_for_dhcp {
     my $nicdevice = shift;
     print_working("Checking Networking Configs For DHCP:") unless ( !$verbose );
     my $grep4dhcp = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-i', "dhcp", "/etc/sysconfig/network-scripts/ifcfg-$nicdevice" );
-    my $Look4NM   = qx[ ps faux | grep 'NetworkManager' | grep -v grep ];                                                                 ## no critic (Cpanel::ProhibitQxAndBackticks)
+    my $Look4NM;
+    if ( $distro_major < 9 ) {
+        $Look4NM   = qx[ ps faux | grep 'NetworkManager' | grep -v grep ];                                                                 ## no critic (Cpanel::ProhibitQxAndBackticks)
+    }
     if ($grep4dhcp) {
         print RED "\t\\_ NIC Device " . $nicdevice . " set for DHCP.\n"
           unless ( !$verbose );
@@ -980,7 +960,7 @@ sub check_resolvconf {
     open( my $fh, '<', '/etc/resolv.conf' );
     while (<$fh>) {
         if ( $_ =~ m/NetworkManager/ ) {
-            $NMinResolv = 1;
+            $NMinResolv = 1 unless( $distro_major >= 9 );
         }
         if ( $_ =~ m/nameserver 127.0.0./ ) {
             $invalidNS = 1;
