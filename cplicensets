@@ -35,7 +35,7 @@
 
 use strict;
 
-my $version = "2.0.54";
+my $version = "2.0.55";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -713,14 +713,12 @@ sub check_for_multiple_defroute {
 }
 
 sub check_for_dhcp {
-
     my $nicdevice = shift;
+    return unless( $distro_major < 9 );
     print_working("Checking Networking Configs For DHCP:") unless ( !$verbose );
     my $grep4dhcp = Cpanel::SafeRun::Timed::timedsaferun( 4, 'grep', '-i', "dhcp", "/etc/sysconfig/network-scripts/ifcfg-$nicdevice" );
     my $Look4NM;
-    if ( $distro_major < 9 ) {
-        $Look4NM   = qx[ ps faux | grep 'NetworkManager' | grep -v grep ];                                                                 ## no critic (Cpanel::ProhibitQxAndBackticks)
-    }
+    $Look4NM   = qx[ ps faux | grep 'NetworkManager' | grep -v grep ];              ## no critic (Cpanel::ProhibitQxAndBackticks)
     if ($grep4dhcp) {
         print RED "\t\\_ NIC Device " . $nicdevice . " set for DHCP.\n"
           unless ( !$verbose );
@@ -960,7 +958,7 @@ sub check_resolvconf {
     open( my $fh, '<', '/etc/resolv.conf' );
     while (<$fh>) {
         if ( $_ =~ m/NetworkManager/ ) {
-            $NMinResolv = 1 unless( $distro_major >= 9 );
+            $NMinResolv = 1 unless( $distro_major > 8 );
         }
         if ( $_ =~ m/nameserver 127.0.0./ ) {
             $invalidNS = 1;
