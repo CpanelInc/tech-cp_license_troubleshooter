@@ -91,6 +91,7 @@
 /etc/yum.repos.d/php_license.repo
 /etx/cron.d/rcosm
 /opt/cpanel/CSPcPanel
+/opt/cpanel/GBL
 /opt/cpanel/cgls
 /opt/cpanel/chattr2
 /opt/cpanel/cpane1.lisc
@@ -131,7 +132,9 @@
 /root/.rccp.result
 /root/.rcproc
 /root/.sysma
+/root/CP.lock
 /root/CSPcPanel
+/root/GBCP.lock
 /root/RCCP.lock
 /root/RcLicenseCP
 /root/RcLicenseCP.1
@@ -139,6 +142,7 @@
 /root/autoinstaller
 /root/cgls
 /root/chattr2
+/root/cp.result
 /root/cpane1.lisc
 /root/cpanel2.sh
 /root/cpanel_update
@@ -396,6 +400,7 @@
 /usr/local/GB/.daemon
 /usr/local/GB/.licensekeycp
 /usr/local/GB/.ping
+/usr/local/GB/.port2083
 /usr/local/GB/.port2093
 /usr/local/GB/.port2096
 /usr/local/GB/cpanel_gb
@@ -431,6 +436,7 @@
 /usr/local/cpanel/.ecpcpsrvd
 /usr/local/cpanel/.ecpuapi
 /usr/local/cpanel/.isitdeleted
+/usr/local/cpanel/.isitdown
 /usr/local/cpanel/.lgbt
 /usr/local/cpanel/.ltrc
 /usr/local/cpanel/.ltrc1
@@ -574,6 +580,9 @@
 /var/log/updatecp/
 /var/run/cspdaemon.lock
 /var/run/cxsupdate.lock
+/var/spool/cron/crontabs/tmp.DhDO7f
+/var/spool/cron/crontabs/tmp.Eo44PW
+/var/spool/cron/crontabs/tmp.VlKYdx
 /var/www/html/lic_check.php
 /var/www/html/trial.key
 /var/www/vhosts/default/htdocs/lic_check.php
