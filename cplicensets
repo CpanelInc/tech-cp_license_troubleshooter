@@ -35,7 +35,7 @@
 
 use strict;
 
-my $version = "2.0.55";
+my $version = "2.0.56";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -100,6 +100,7 @@ else {
     }
 }
 my ( $skipdate, $withlogs, $verifypage, $verbose, $help );
+my $wikilink="https://webpros.atlassian.net/wiki/x/boDwAAE";
 our @WARNINGS;
 our @HISTORY;
 our $histCnt;
@@ -411,7 +412,7 @@ sub get_license_data {
         $@ =~ /Failure to reach Verify service/ and $e = $@;
         if ( defined $e ) {
             $L3 = 1;
-            push( @WARNINGS, "Found evidence related to CPANEL-22182 Could not verify license!" ) unless ( !iam('cptech') );
+            push( @WARNINGS, "Could not verify license! - Please update $wikilink" ) unless ( !iam('cptech') );
         }
     }
     $verify_license_data = Cpanel::Verify::get_licenses($tcIPAddress);
@@ -1320,7 +1321,7 @@ sub loadHistory {
         $linecnt++;
         if ( @HISTORY[$linecnt] =~ m{Still logged into remote} ) {
             $L3 = 1;
-            push( @WARNINGS, "Found evidence related to CPANEL-22182 /root/.bash_history (within the first 20 lines) See CX-771" ) unless ( !iam('cptech') );
+            push( @WARNINGS, "Please update $wikilink /root/.bash_history (within the first 20 lines) See CX-771" ) unless ( !iam('cptech') );
             last;
         }
     }
@@ -1448,7 +1449,7 @@ sub getHist {
         chomp($match);
         next unless ($match);
         if ($match) {
-            push( @WARNINGS, "Found evidence related to CPANEL-22182 in /root history [$lookfor]" ) unless ( !iam('cptech') || ($L3) );
+            push( @WARNINGS, "Please update $wikilink Found /root history [$lookfor]" ) unless ( !iam('cptech') || ($L3) );
             $L3 = 1;
         }
     }
@@ -1462,7 +1463,7 @@ sub check_sources_pm {
         open( my $fh, '<', $file );
         while( <$fh> ) {
             if ( $_ =~ m/csp.name/ && iam('cptech')) {
-                push( @WARNINGS, "Found evidence related to CPANEL-22182 in $file file" );
+                push( @WARNINGS, "Please update $wikilink Found in $file file" );
                 $L3 = 1;
                 $found = 1;
                 last;
@@ -1484,7 +1485,7 @@ sub chk_upcp_posthook {
         foreach my $lookfor (@lookfor) {
             chomp($lookfor);
             if ( $match =~ /$lookfor/ ) {
-                push( @WARNINGS, "Found evidence related to CPANEL-22182 in the /usr/local/cpanel/scripts/postupcp hook" ) unless ( !iam('cptech') );
+                push( @WARNINGS, "Please update $wikilink Found in the /usr/local/cpanel/scripts/postupcp hook" ) unless ( !iam('cptech') );
                 $L3 = 1;
                 last;
             }
@@ -1509,7 +1510,7 @@ sub chk_etc_hosts {
         while (<$fh2>) {
             chomp($_);
             if ( $_ =~ m/88.198.132.70|68.183.71.131|88.198.132.68/ ) {
-                push( @WARNINGS, "Found evidence related to CPANEL-22182 in /etc/hosts.allow" ) unless ( !iam('cptech') );
+                push( @WARNINGS, "Please update $wikilink Found in /etc/hosts.allow" ) unless ( !iam('cptech') );
                 $L3 = 1;
                 last;
             }
@@ -1584,7 +1585,7 @@ sub chk_cgls {
     }
     if ( scalar(@shenaniganlist) > 0 ) {
         $L3 = 1;
-        push( @WARNINGS, "Found evidence related to CPANEL-22182" ) unless ( !iam('cptech') );
+        push( @WARNINGS, "Please update $wikilink" ) unless ( !iam('cptech') );
         push( @WARNINGS, "\t " . WHITE @shenaniganlist )            unless ( !iam('cptech') );
         $cgls = 1;
     }
@@ -1594,7 +1595,7 @@ sub chk_cgls2 {
     my $isASCII = Cpanel::SafeRun::Timed::timedsaferun( 5, 'file', '/usr/local/cpanel/cpkeyclt' );
     return unless ( $isASCII =~ m/ASCII/ );
     $L3 = 1;
-    push( @WARNINGS, "Found evidence of CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
+    push( @WARNINGS, "Please update $wikilink" ) unless ( $cgls || !iam('cptech') );
     $cgls = 1;
 }
 
@@ -1605,7 +1606,7 @@ sub chk_rclocal {
         chomp($_);
         if ( $_ =~ m/cpkeyclt/ ) {
             $L3 = 1;
-            push( @WARNINGS, "Found evidence related to CPANEL-22182 in /etc/rc.local" ) unless ( !iam('cptech') );
+            push( @WARNINGS, "Please update $wikilink Found in /etc/rc.local" ) unless ( !iam('cptech') );
         }
     }
     close($fh);
@@ -1623,7 +1624,7 @@ sub check_csf_conf {
             chomp($_);
             if ( $_ =~ m{CSP Licensing Servers|/usr/bin/cspfwd|/usr/bin/CSPUpdate} ) {
                 $L3 = 1;
-                push( @WARNINGS, "Found evidence related to CPANEL-22182 in /etc/csf directory" ) unless ( !iam('cptech') );
+                push( @WARNINGS, "Please update $wikilink Found in /etc/csf directory" ) unless ( !iam('cptech') );
             }
         }
         close($fh);
@@ -1671,7 +1672,7 @@ sub check_crons {
                     last;
                 }
                 if ( $_ =~ m/CSPUpdate/ ) {
-                    push( @WARNINGS, "Found evidence related to CPANEL-22182 in $cron_log_file file contains CSP" ) unless ( !iam('cptech') || ($L3) );
+                    push( @WARNINGS, "Please update $wikilink Found in $cron_log_file file contains CSP" ) unless ( !iam('cptech') || ($L3) );
                     $L3 = 1;
                 }
             }
@@ -2035,7 +2036,7 @@ sub get_cpsrvd_restarts {
         }
         if ( $histline =~ m/cgls/ ) {
             $L3 = 1;
-            push( @WARNINGS, "Found evidence related to CPANEL-22182" ) unless ( $cgls || !iam('cptech') );
+            push( @WARNINGS, "Please update $wikilink" ) unless ( $cgls || !iam('cptech') );
             $cgls = 1;
         }
     }
@@ -2322,7 +2323,7 @@ sub chk_cgls3 {
     my $attr = Cpanel::SafeRun::Timed::timedsaferun( 5, '/usr/bin/lsattr', '/usr/local/cpanel/cpkeyclt' );
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
         $L3 = 1;
-        push( @WARNINGS, "Found evidence related to CPANEL-22182." )                        unless ( $cgls || !iam('cptech') );
+        push( @WARNINGS, "Please update $wikilink" )                        unless ( $cgls || !iam('cptech') );
         push( @WARNINGS, "\t/usr/local/cpanel/cpkeyclt is set to [IMMUTABLE/APPEND-ONLY]" ) unless ( $cgls || !iam('cptech') );
         $cgls = 1;
     }
