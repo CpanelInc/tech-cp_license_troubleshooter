@@ -35,7 +35,7 @@
 
 use strict;
 
-my $version = "2.0.56";
+my $version = "2.0.57";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -217,6 +217,7 @@ get_envtype();
 check_for_lisc_lock();
 check_for_trial();
 check_hostsfile();
+check_cpsrvd();
 get_mainip();
 get_ipinfo($external_ip_address);
 get_wwwacctconf_ip();
@@ -455,6 +456,15 @@ sub check_for_trial {
             "The /var/cpanel/trial touchfile found and license is not a trial license"
         ) unless ($Trial);
     }
+}
+
+sub check_cpsrvd {
+    return unless ( iam('cptech' ));
+    print_working("Checking /usr/local/cpanel/cpsrvd.so for modifications.") unless ( !$verbose );
+    my $results = Cpanel::SafeRun::Timed::timedsaferun( 3, 'grep', '-a', 'syscare.ir', '/usr/local/cpanel/cpsrvd.so' );
+    return unless($results);
+    push( @WARNINGS, "Found license circumvention auth links within the cpsrvd.so file. Please update $wikilink");
+    $L3 = 1;
 }
 
 sub check_hostsfile {
@@ -1524,8 +1534,8 @@ sub chk_mounts {
     my @liscMounted = split /\n/, $liscMounted;
     return unless (@liscMounted);
     foreach my $mount_line (@liscMounted) {
-        if ( $mount_line =~ m/cpanel.lisc/ ) {
-            push( @WARNINGS, "cpanel.lisc possibly mounted" ) unless ( !iam('cptech') );
+        if ( $mount_line =~ m/cpanel.lisc|cpsanitycheck.so/ ) {
+            push( @WARNINGS, "cpanel.lisc or cpsanitycheck.so is possibly mounted" ) unless ( !iam('cptech') );
             $L3 = 1;
         }
     }
