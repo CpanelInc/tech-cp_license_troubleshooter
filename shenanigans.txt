@@ -119,7 +119,6 @@
 /opt/license/lock
 /opt/license/make-expired-license.sh
 /opt/tactu_cpanel
-/root/.acme.sh
 /root/.back0
 /root/.backdrive
 /root/.bash_time
