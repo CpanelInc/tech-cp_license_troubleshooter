@@ -35,7 +35,7 @@
 
 use strict;
 
-my $version = "2.0.57";
+my $version = "2.0.58";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -83,6 +83,8 @@ my $distro_minor = Cpanel::OS->_instance->minor;     ## no critic (Cpanel::Cpane
 my $distro_version = $distro_major . "." . $distro_minor;
 
 _init_run_state();
+
+_set_run_type('cptech');
 
 if ( exists $ENV{'PACHA_AUTOFIXER'} ) {
     _set_run_type('cptech');
@@ -183,7 +185,13 @@ if ( defined $package && $package =~ m/test/i ) { $Trial = 1; }
 print_working( "Company/Partner: " . CYAN $partner ) unless ( !$package );
 print_working( "Package: " . CYAN $package )         unless ( !$package );
 my $UserCnt = usercount();
-print_working( "Total Users: " . CYAN $UserCnt );
+my $message="";
+if ( iam('dnsonly')) {
+    $message = RED " WARNING - DNSOnly License with user count > 0!!!" if ( $UserCnt > 0 && iam('cptech'));
+    $L3 = 1;
+}
+print_working( "Total Users: " . CYAN $UserCnt ) unless(iam('cptech'));
+print_working( "Total Users: " . CYAN $UserCnt . $message) if(iam('cptech'));
 my $ActiveProfileNode = "UNKNOWN";
 if ( -e "/usr/local/cpanel/cpanel.lisc" ) {
     $ActiveProfileNode = getProfileNode() // "UNKNOWN";
@@ -374,7 +382,6 @@ sub verify_license {
     my $tcIPAddress = shift;
     my ( $tcPackage, $tcPartner, $tlisSolo );
     for my $licenseline ( @{ $verify_license_data->{current} } ) {
-        #print "DEBUG: $licenseline->{producttype} - $licenseline->{package}\n";
         next unless ( $licenseline->{producttype} == 1 || $licenseline->{producttype} == 1048576 );
         $tcPackage = $licenseline->{package};
         $tcPartner = $licenseline->{company};
@@ -387,7 +394,6 @@ sub verify_license {
         if ( $tcPackage =~ m/plus/i )  { $lnAllowedCnt = 50; }
 
         # SEE TECH-1298
-        #if ( $tcPackage =~ m/premier/i )                           { $lnAllowedCnt = 100; }
         if ( $tcPackage =~ m/premier/i )                           { $lnAllowedCnt = 0; }
         if ( $tcPackage =~ m/premier/i && $tcPackage =~ m/(\d+)/ ) { $lnAllowedCnt = $1; }
         if ( $tcPackage =~ m/autoscale/i )                         { $lnAllowedCnt = 0; }
@@ -2346,7 +2352,7 @@ sub chk_cgls3 {
     my $attr = Cpanel::SafeRun::Timed::timedsaferun( 5, '/usr/bin/lsattr', '/usr/local/cpanel/cpkeyclt' );
     if ( $attr =~ m/^\s*\S*[ai]/ ) {
         $L3 = 1;
-        push( @WARNINGS, "Please update $wikilink" )                        unless ( $cgls || !iam('cptech') );
+        push( @WARNINGS, "Please update $wikilink" ) unless ( $cgls || !iam('cptech') );
         push( @WARNINGS, "\t/usr/local/cpanel/cpkeyclt is set to [IMMUTABLE/APPEND-ONLY]" ) unless ( $cgls || !iam('cptech') );
         $cgls = 1;
     }
