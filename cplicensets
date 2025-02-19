@@ -102,7 +102,8 @@ else {
     }
 }
 my ( $skipdate, $withlogs, $verifypage, $verbose, $help );
-my $wikilink="https://webpros.atlassian.net/wiki/x/boDwAAE";
+#my $wikilink="https://webpros.atlassian.net/wiki/x/boDwAAE";
+my $wikilink="https://webpros.atlassian.net/wiki/x/NQGjBQE";
 our @WARNINGS;
 our @HISTORY;
 our $histCnt;
