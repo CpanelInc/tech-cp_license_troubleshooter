@@ -1404,6 +1404,7 @@ sub getHist {
         'licenseall.org',
         'highhosters.net',
         'cplicenses.com',
+        'licences4server.com',
         'razorhost.in',
         'hostseo.uk',
         'cpanelcentral.com',
