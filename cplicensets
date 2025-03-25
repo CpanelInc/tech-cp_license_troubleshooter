@@ -35,7 +35,7 @@
 
 use strict;
 
-my $version = "2.0.58";
+my $version = "2.0.59";
 our $maxGCE = 7;
 our $OPT_TIMEOUT;
 our $trCheck = 1;
@@ -1399,6 +1399,10 @@ sub getHist {
         'fviatool',
         'time4vps.com',
         'sosaystartcom',
+        'verifycpanel.com',
+        'cpanelcity.com',
+        'dotshift.net',
+        'licensedash.com',
         'licenseboy.com',
         'licensehost.net',
         'licenseall.org',
