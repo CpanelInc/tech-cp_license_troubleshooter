@@ -1402,6 +1402,8 @@ sub getHist {
         'verifycpanel.com',
         'cpanelcity.com',
         'dotshift.net',
+        'syslicense.net',
+        'cheaplicensebd.com',
         'licensedash.com',
         'licenseboy.com',
         'licensehost.net',
