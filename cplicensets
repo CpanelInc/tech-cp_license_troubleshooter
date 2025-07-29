@@ -1473,6 +1473,7 @@ sub getHist {
         'hostbeet.com',
         'cheap-cpanel.com',
         'sharedlicense.com',
+        'sharedlicense.io',
         'lic.click',
         'licensemonster.xyz',
         'licensemesh.com',
